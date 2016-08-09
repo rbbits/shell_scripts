@@ -16,10 +16,11 @@ usage(){
 	
 	   -k <full path>   Full path to keytabs directory. Use env KEYTABPATH for default path otherwise one is required.
 	   -d <savedir>     Download directory; default is ./<RUN>; If -i targetsfile you can use -c <column n>.
-	   -f <format|file> Download format: <b>am, <c>ram, <f>astq (.fq.gz), <t>ophat. Default: c.
+	   -f <format>      Download format: <b>am, <c>ram, <f>astq (.fq.gz), <t>ophat, <i>ndex. Default: c.
 	                       If -f = b & bam not present in iRODS then cram->bam will be enforced unless -n is used.
 	                       If -f = t accepted_hits.bam will be extracted from source, see -t for options.
-	   -n               Don't carry out cram->bam operation if there's no bam (exit with error).
+	                       If -f = i only the index (.cram.crai or .bai) is downloaded. If both are wanted use -f c|b and -o i.
+	   -n <number>      Record (line number) inside targets file to be processed.
 	   -r <reference>   Only needed if -f = f & bam not present in iRODS.
 	   -o <options>     Use with -f option 
 	                        If -f = t then use -o a|b|h to download:
@@ -40,7 +41,7 @@ usage(){
 #die() { echo >&2 -e "\nERROR: $@\n"; exit 1; }
 #printcmd_and_run() { echo "COMMAND: $@"; "$@"; code=$?; [ $code -ne 0 ] && die "command [$*] failed with error code $code"; }
 
-while getopts ":hi:d:f:nr:t:o:c:k:" OPTION; do
+while getopts ":hi:d:f:n:r:t:o:c:k:" OPTION; do
     case $OPTION in
         h)
             usage; exit 1;;
@@ -51,11 +52,11 @@ while getopts ":hi:d:f:nr:t:o:c:k:" OPTION; do
         f)
             FORMAT=$OPTARG;;
         n)
-            CONVERT=0;;
+            RECNO=$OPTARG;;
         r)
             REFERENCE=$OPTARG;;
         o)
-            TFOPTION=$OPTARG;;
+            FOPTION=$OPTARG;;
         c)
             TARGETSCOLUMN=$OPTARG;;
         k)
@@ -67,32 +68,42 @@ while getopts ":hi:d:f:nr:t:o:c:k:" OPTION; do
     esac
 done
 
+exitmessage(){
+    declare EXITMESG=$1
+    declare EXITCODE=$2
+    if [ $EXITCODE -eq 0 ]; then
+        >&1 printf '\n%s\n' "$EXITMESG"
+    else
+        >&2 printf '\n%s\n' "$EXITMESG"
+    fi
+    exit $EXITCODE
+}
 
-formatregex='^[bcfto]$'
+
+formatregex='^[bcftoi]$'
 tfoptionregex='^[abh]$'
 cboptionregex='^i$'
 tcoptionregex='^[[:digit:]]?$'
 defformat=c
 deftfoption=h
 wrongformat=0
-wrongtfoption=0
-wrongofoption=0
+wrongfoption=0
 wrongtcoption=0
-cram2bam=1
 defaultgzlevel=9
+nregex='^[0-9]+$'
 
 [ -z "$FORMAT" ] && FORMAT=$defformat
 [ -n "$FORMAT" ] && [[ $FORMAT =~ $formatregex ]] || wrongformat=1
-[ -z "$CONVERT" ] && CONVERT=$cram2bam
-[ -z "$TFOPTION" ] && TFOPTION=$deftfoption
-[ -n "$TFOPTION" ] && [[ $TFOPTION =~ $tfoptionregex ]] || wrongtfoption=1
-[ -z "$TARGETSCOLUMN" ] && TARGETSCOLUMN=2
-[ -n "$TARGETSCOLUMN" ] && [[ $TARGETSCOLUMN =~ $tcoptionregex ]] || wrongtcoption=1
+if [ "$FORMAT" = "t" ]; then
+    [ -z "$FOPTION" ] && FOPTION=$deftfoption
+    [ -n "$FOPTION" ] && [[ $FOPTION =~ $tfoptionregex ]] || wrongfoption=1
+elif [[ $FORMAT =~ c|b ]] && [ -n "$FOPTION" ]; then
+    [ -z "$FOPTION" ] && FOPTION=""
+    [[ ! $FOPTION =~ $cboptionregex ]] && wrongfoption=1
+fi    
 
-[ "$wrongformat" -eq "1" ] && echo "-f: Wrong output format: $FORMAT" && exit 2
-[ "$wrongtfoption" -eq "1" ] && echo "-t: Wrong option for -f t: $TFOPTION" && exit 2
-[ "$wrongtfoption" -eq "1" ] && echo "-o: Wrong file type option for -o: $OTHERFILE" && exit 2
-[ "$wrongtcoption" -eq "1" ] && echo "-c: Column not a number -c: $TARGETSCOLUMN" && exit 2
+[ "$wrongformat" -eq "1" ] && exitmessage "-f: Wrong output format: $FORMAT" 2
+[ "$wrongfoption" -eq "1" ] && exitmessage "-o: Wrong file-type option for -f $FORMAT: $FOPTION" 2
 
 
 if env | grep -q ^KEYTABPATH=; then
@@ -103,17 +114,14 @@ if env | grep -q ^KEYTABPATH=; then
         echo "COMMAND: /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t ${KEYTABPATH}/${KEYTABFILE}"
         /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t  "${KEYTABPATH}/${KEYTABFILE}"
     else
-        echo "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?"
-        exit 1
+        exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?" 1
         # example: /nfs/gapi/data/keytabs/${USER}.keytab
     fi
 else
     if [ -z "$KEYTABPATH" ]; then
-        echo "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?"
-        exit 1
+        exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?" 1
     fi
 fi
-
 
 if [ -z "$TARGET" ]; then
 
@@ -122,11 +130,26 @@ if [ -z "$TARGET" ]; then
 
 elif [ -e "$TARGET" ]; then
 
-    RUN=`head -n ${LSB_JOBINDEX} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $2}'`
-    POS=`head -n ${LSB_JOBINDEX} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $3}'`
-    TAG=`head -n ${LSB_JOBINDEX} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $4}'`
+    if [ -z "$LSB_JOBINDEX" ]; then
+        if [ -n "$RECNO" ]; then
+            [ -n "$RECNO" ] && [[ $RECNO =~ $nregex ]] || exitmessage "-n: not a digit: $RECNO" 2
+        else
+            exitmessage "ERROR: Env variable LSB_JOBINDEX not set. Use -n?" 1            
+        fi
+    fi
+
+    LINE=${LSB_JOBINDEX:-$RECNO}
+
+    RUN=`head -n ${LINE} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $2}'`
+    POS=`head -n ${LINE} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $3}'`
+    TAG=`head -n ${LINE} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $4}'`
+
     if [ -n "$TARGETSCOLUMN" ]; then
-        SDIR=`head -n ${LSB_JOBINDEX} ${TARGET} | tail -1 | awk -v col=$TARGETSCOLUMN 'BEGIN { FS = "\t" } ; {print $col}'`
+        
+        [[ ! $TARGETSCOLUMN =~ $tcoptionregex ]] && exitmessage "-c: Column not a number -c: $TARGETSCOLUMN" 1
+
+        SDIR=`head -n ${LINE} ${TARGET} | tail -1 | awk -v col=$TARGETSCOLUMN 'BEGIN { FS = "\t" } ; {print $col}'`
+        
     fi
            
 else
@@ -139,13 +162,12 @@ else
         TAG="${BASH_REMATCH[6]}";
         SPL="${BASH_REMATCH[8]}";
     else
-        echo "The run id '$TARGET' doesn't look right. Example: 14940_3#34_human"
-        exit 1
+        exitmessage "The run id '$TARGET' doesn't look right. Example: 14940_3#34_human" 1
     fi
     
 fi
 
-#echo run: $RUN  pos: $POS  tag: $TAG  spl: $SPL
+# echo DEBUG: run: $RUN  pos: $POS  tag: $TAG  spl: $SPL
 
 XAMID=$RUN\_$POS
 
@@ -159,16 +181,22 @@ NOBAM=$?
 
 if [ "$NOBAM" -eq "4" ]; then
     iformat=cram
+    ixformat=cram.crai
 elif [ "$NOBAM" -eq "0" ]; then
     iformat=bam
+    ixformat=bai
 else
-    echo "Error trying to get bam/cram file for ${XAMID}: $LSBAM"
-    exit 1
+    exitmessage "Error trying to get bam/cram file for ${XAMID}: $LSBAM" 1
 fi
 
 
+if [ -z "$SDIR" ]; then
+    SDIR=${RUN}
+else
+    [ "$SDIR" != "$RUN" ] && SDIR+=/${RUN}
+fi
 
-[ -z "$SDIR" ] && SDIR=./${RUN}
+# echo DEBUG: directory: $SDIR; exit 0
 
 mkdir -p $SDIR
 
@@ -178,32 +206,41 @@ case "$FORMAT" in
     b)
         if [ "$NOBAM" -eq "4" ]; then
             echo "No bam format file present in iRODS for ${XAMID}: $LSBAM"
-            if [ "$CONVERT" -eq "0" ]; then
-                echo "$0 run with -n flag, cram->bam operation will not be done."
-                exit 1
-            else
-                echo "Converting cram->bam ..."
-                echo "COMMAND: /software/irods/icommands/bin/iget -K /seq/${RUN}/${XAMID}.cram - | scramble -I cram -O bam - ${SDIR}/${XAMID}.bam"
-                /software/irods/icommands/bin/iget -K /seq/${RUN}/${XAMID}.cram - | scramble -I cram -O bam - ${SDIR}/${XAMID}.bam
-                RET_CODE=$?
+            echo "Converting cram->bam ..."
+            echo "COMMAND: /software/irods/icommands/bin/iget -K /seq/${RUN}/${XAMID}.cram - | /software/solexa/bin/scramble -I cram -O bam - ${SDIR}/${XAMID}.bam"
+            /software/irods/icommands/bin/iget -K /seq/${RUN}/${XAMID}.cram - | /software/solexa/bin/scramble -I cram -O bam - ${SDIR}/${XAMID}.bam
+            RET_CODE=$?
+            if [ "$FOPTION" = "i" ]; then
+                echo "COMMAND: /software/npg/bin/samtools1 index ${SDIR}/${XAMID}.bam"
+                /software/npg/bin/samtools1 index ${SDIR}/${XAMID}.bam
+                [ "$?" -ne "0" ] && echo "WARNING: Failed to create index file for ${SDIR}/${XAMID}.bam"
             fi
         elif [ "$NOBAM" -eq "0" ]; then
             echo "COMMAND: /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam"
             /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam
             RET_CODE=$?
+            if [ "$FOPTION" = "i" ]; then
+                echo "COMMAND: /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai"
+                /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai
+                [ "$?" -ne "0" ] && echo "WARNING: Failed to download index file for ${SDIR}/${XAMID}.bam"
+            fi
         fi
         ;;
     c)
         echo "COMMAND: /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.cram ${SDIR}/${XAMID}.cram"
         /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.cram ${SDIR}/${XAMID}.cram
         RET_CODE=$?
+        if [ "$FOPTION" = "i" ]; then
+            echo "COMMAND: /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}"
+            /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}
+            [ "$?" -ne "0" ] && echo "WARNING: Failed to download index file for ${SDIR}/${XAMID}.bam"
+        fi
         ;;
     f)
         if [ "$NOBAM" -eq "4" ]; then
             REFERENCEOPTION=""
             if [ -z "$REFERENCE" ]; then
-                echo "-f: A reference is needed: -r $REFERENCE ."
-                exit 1
+                exitmessage "-f: A reference is needed: -r $REFERENCE ." 1
             else
                 REFERENCEOPTION="reference=$REFERENCE"
             fi
@@ -220,6 +257,11 @@ case "$FORMAT" in
             /software/npg/bin/bamtofastq exclude=QCFAIL gz=1 level=$defaultgzlevel F=$FQ1 F2=$FQ2
         RET_CODE=$?
         ;;
+    i)
+        echo "COMMAND: /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}"
+        /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}
+        RET_CODE=$?
+        ;;       
     t)
         SDIR=./tophat/$RUN/$XAMID
         mkdir -p $SDIR
@@ -230,12 +272,12 @@ case "$FORMAT" in
         echo "COMMAND: /software/npg/bin/samtools1 view -bh -F 0x4 -o ${SDIR}/accepted_hits.bam irods:/seq/${RUN}/${XAMID}.$iformat"
         ACCEPTEDHITSFILE="$(/software/npg/bin/samtools1 view -bh -F 0x4 -o ${SDIR}/accepted_hits.bam irods:/seq/${RUN}/${XAMID}.$iformat 2>&1)"
         ret_code_hits=$?
-        if [ "$TFOPTION" = "a" ] || [ "$TFOPTION" = "b" ] ; then
+        if [[ $FOPTION =~ a|b ]] ; then
             echo "COMMAND: /software/npg/bin/samtools1 view -bh -f 0x4 -o ${SDIR}/unmapped.bam irods:/seq/${RUN}/${XAMID}.$iformat"
             UNMAPPEDFILE="$(/software/npg/bin/samtools1 view -bh -f 0x4 -o ${SDIR}/unmapped.bam irods:/seq/${RUN}/${XAMID}.$iformat 2>&1)"
             ret_code_unmp=$?
         fi
-        if [ "$TFOPTION" = "a" ]; then
+        if [ "$FOPTION" = "a" ]; then
             echo "COMMAND: /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.junctions.bed  ${SDIR}/junctions.bed"
             JUNCTIONSFILE="$(/software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.junctions.bed  ${SDIR}/junctions.bed 2>&1)"
             ret_code_junc=$?
