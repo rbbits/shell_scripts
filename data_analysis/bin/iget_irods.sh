@@ -11,21 +11,23 @@ usage(){
 	Required:
 
 	   -i <rpt|file>    Input id ( RUN_POSITION[#TAG[_SPLIT]] ) or a targets file.
-	   -k <full path>   Full path to keytabs directory
 	
 	Optional:
 	
-	   -d <savedir>     Download directory; defaults: If -i rpt Then ./irods/<RUN>; If -i targetsfile Then 7th column.
-	   -f <format|file> Download format: <b>am, <c>ram, <f>astq (.fq.gz), <t>ophat; default: c.
+	   -k <full path>   Full path to keytabs directory. Use env KEYTABPATH for default path otherwise one is required.
+	   -d <savedir>     Download directory; default is ./<RUN>; If -i targetsfile you can use -c <column n>.
+	   -f <format|file> Download format: <b>am, <c>ram, <f>astq (.fq.gz), <t>ophat. Default: c.
 	                       If -f = b & bam not present in iRODS then cram->bam will be enforced unless -n is used.
 	                       If -f = t accepted_hits.bam will be extracted from source, see -t for options.
 	   -n               Don't carry out cram->bam operation if there's no bam (exit with error).
 	   -r <reference>   Only needed if -f = f & bam not present in iRODS.
-	   -t <options>     Only needed if -f = t: <a>ll, <b>ams, <h>its; default: h. Downloads:
-	                       <a>ll available files: accepted_hits.bam, unmapped.bam, *.bed
-	                       <b>am files: accepted_hits.bam and unmapped.bam
-	                       <h>its: accepted_hits.bam only.
-	                       In all cases files will go to a ./tophat/<runid>/<rpt> directory (-d is ignored).
+	   -o <options>     Use with -f option 
+	                        If -f = t then use -o a|b|h to download:
+	                           <a>ll available files: accepted_hits.bam, unmapped.bam, *.bed
+	                           <b>am files: accepted_hits.bam and unmapped.bam
+	                           <h>its: accepted_hits.bam only.
+	                           In all cases files will go to a ./tophat/<runid>/<rpt> directory (-d is ignored).
+	   -c <column n>    Use to indicate the column in the targets file to be used as <savedir> if empty then ./<RUN>
 	   -h               Show this message.
 	
 	EOF
@@ -50,10 +52,10 @@ while getopts ":hi:d:f:nr:t:o:k:" OPTION; do
             CONVERT=0;;
         r)
             REFERENCE=$OPTARG;;
-        t)
-            TFOPTION=$OPTARG;;
         o)
-            OTHERFILE=$OPTARG;;
+            TFOPTION=$OPTARG;;
+        c)
+            TARGETSCOLUMN=$OPTARG;;
         k)
             KEYTABPATH=$OPTARG;;
         \?)
@@ -67,46 +69,48 @@ done
 formatregex='^[bcfto]$'
 tfoptionregex='^[abh]$'
 otherfilergx='^[mipsk]$'
+tcoptionregex='^[[:digit:]]?$'
 defformat=c
 deftfoption=h
 wrongformat=0
 wrongtfoption=0
 wrongofoption=0
+wrongtcoption=0
 cram2bam=1
 defaultgzlevel=9
 
 [ -z "$FORMAT" ] && FORMAT=$defformat
 [ -n "$FORMAT" ] && [[ $FORMAT =~ $formatregex ]] || wrongformat=1
-[ -z "$SDIR" ] && SDIR=./irods/$RUN
 [ -z "$CONVERT" ] && CONVERT=$cram2bam
 [ -z "$TFOPTION" ] && TFOPTION=$deftfoption
 [ -n "$TFOPTION" ] && [[ $TFOPTION =~ $tfoptionregex ]] || wrongtfoption=1
-#[ -z "$OTHERFILE" ] && OTHERFILE=""
-#[ -n "$OTHERFILE" ] && [[ $OTHERFILE =~ $otherfilergx ]] || wrongofoption=1
+[ -z "$TARGETSCOLUMN" ] && TARGETSCOLUMN=2
+[ -n "$TARGETSCOLUMN" ] && [[ $TARGETSCOLUMN =~ $tcoptionregex ]] || wrongtcoption=1
 
 [ "$wrongformat" -eq "1" ] && echo "-f: Wrong output format: $FORMAT" && exit 2
 [ "$wrongtfoption" -eq "1" ] && echo "-t: Wrong option for -f t: $TFOPTION" && exit 2
 [ "$wrongtfoption" -eq "1" ] && echo "-o: Wrong file type option for -o: $OTHERFILE" && exit 2
+[ "$wrongtcoption" -eq "1" ] && echo "-c: Column not a number -c: $TARGETSCOLUMN" && exit 2
 
 
-
-if [ -z "$KEYTABPATH" ]; then
-    usage
-    exit 1
-fi
-
-USER=`whoami`
-KEYTABFILE=${USER}.keytab
-
-if [ -d "$KEYTABPATH" ] && [ -e "${KEYTABPATH}/${KEYTABFILE}" ]; then
-    echo "COMMAND: /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t ${KEYTABPATH}/${KEYTABFILE}"
-    /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t  "${KEYTABPATH}/${KEYTABFILE}"
+if env | grep -q ^KEYTABPATH=; then
+    echo "Using keytabs found in $KEYTABPATH"
+    USER=`whoami`
+    KEYTABFILE=${USER}.keytab
+    if [ -d "$KEYTABPATH" ] && [ -e "${KEYTABPATH}/${KEYTABFILE}" ]; then
+        echo "COMMAND: /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t ${KEYTABPATH}/${KEYTABFILE}"
+        /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t  "${KEYTABPATH}/${KEYTABFILE}"
+    else
+        echo "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?"
+        exit 1
+        # example: /nfs/gapi/data/keytabs/${USER}.keytab
+    fi
 else
-    echo "-k: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory"
-    exit 1
-    # example: /nfs/gapi/data/keytabs/${USER}.keytab
+    if [ -z "$KEYTABPATH" ]; then
+        echo "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?"
+        exit 1
+    fi
 fi
-
 
 
 if [ -z "$TARGET" ]; then
@@ -119,8 +123,10 @@ elif [ -e "$TARGET" ]; then
     RUN=`head -n ${LSB_JOBINDEX} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $2}'`
     POS=`head -n ${LSB_JOBINDEX} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $3}'`
     TAG=`head -n ${LSB_JOBINDEX} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $4}'`
-    SDIR=`head -n ${LSB_JOBINDEX} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $7}'`
-        
+    if [ -n "$TARGETSCOLUMN" ]; then
+        SDIR=`head -n ${LSB_JOBINDEX} ${TARGET} | tail -1 | awk -v col=$TARGETSCOLUMN 'BEGIN { FS = "\t" } ; {print $col}'`
+    fi
+           
 else
 
     regex='^([[:digit:]]*)_([[:digit:]]*)(_([[:alpha:]]*))?(#([[:digit:]]*))?(_([[:alpha:]]*))?'
@@ -160,9 +166,11 @@ fi
 
 
 
-RET_CODE=0
+[ -z "$SDIR" ] && SDIR=./${RUN}
 
 mkdir -p $SDIR
+
+RET_CODE=0
 
 case "$FORMAT" in
     b)
@@ -240,7 +248,7 @@ case "$FORMAT" in
             [ "$ret_code_unmp" -ne "0" ] && echo "iget: $UNMAPPEDFILE"
         fi
         ;;
-#    o)
+#    x)
 #        case "$OTHERFILE" in
 #            m)
 #                echo "COMMAND: /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.deletions.bed  ${SDIR}/deletions.bed"
@@ -252,7 +260,5 @@ case "$FORMAT" in
 #        esac
         
 esac
-
-# NOTE: Exit code 3 seems to be the one for failed download.
 
 exit $RET_CODE
