@@ -2,6 +2,19 @@
 
 usage(){
     cat <<-EOF
+	Usage: $0  -i  RUN_POSITION[#TAG[_SPLIT]]  [ -k|d|f|n|r|o|c VALUE ]  [ -h|H ]
+
+	Example: $0 -i 12345_1#1_ysplit
+
+	Use $0 -H for details about options.
+
+	email to <rb11@sanger.ac.uk> to report bugs.
+	EOF
+}
+
+
+morehelp(){
+    cat <<-EOF
 	usage: $0 options
 	
 	This script downloads bam|cram files from iRODS
@@ -11,27 +24,65 @@ usage(){
 	Required:
 
 	   -i <rpt|file>    Input id ( RUN_POSITION[#TAG[_SPLIT]] ) or a targets file.
+
+	OR:
+
+	   -r <run>         Run
 	
 	Optional:
+
+	   -p <position>    Lane
+
+	   -t <tag>         Tag
 	
-	   -k <full path>   Full path to keytabs directory. Use env KEYTABPATH for default path otherwise one is required.
-	   -d <savedir>     Download directory; default is ./<RUN>; If -i targetsfile you can use -c <column n>.
-	   -f <format>      Download format: <b>am, <c>ram, <f>astq (.fq.gz), <t>ophat, <i>ndex. Default: c.
-	                       If -f = b & bam not present in iRODS then cram->bam will be enforced unless -n is used.
-	                       If -f = t accepted_hits.bam will be extracted from source, see -t for options.
-	                       If -f = i only the index (.cram.crai or .bai) is downloaded. If both are wanted use -f c|b and -o i.
-	   -n <number>      Record (line number) inside targets file to be processed.
-	   -r <reference>   Only needed if -f = f & bam not present in iRODS.
-	   -o <options>     Use with -f option 
-	                        If -f = t then use -o a|b|h to download:
-	                           <a>ll available files: accepted_hits.bam, unmapped.bam, *.bed
-	                           <b>am files: accepted_hits.bam and unmapped.bam
-	                           <h>its: accepted_hits.bam only.
-	                           In all cases files will go to a ./tophat/<runid>/<rpt> directory (-d is ignored).
-	                        If -f = c|b then use -o i to download:
-	                           <i>ndex file: .cram.crai or .bai correspondingly.
-	   -c <column n>    Use to indicate the column in the targets file to be used as <savedir> if empty then ./<RUN>
-	   -h               Show this message.
+	   -k <full path>   Full path to keytabs directory. Use env KEYTABPATH for default
+	                    path otherwise one is required.
+	
+	   -d <savedir>     Download directory; default is ./<RUN>; If -i targetsfile you
+	                    can use -c <column n>.
+	
+	   -f <format>      Download format: 
+	
+	                    -f b  BAM file, if exists, otherwise CRAM->BAM will be 
+	                          enforced unless -n is used
+	
+	                    -f c  CRAM file. This is the default
+	
+	                    -f f  Files in FASTQ format (.fq.gz)
+	
+	                    -f i  Download index file only (.cram.crai or .bai) if both
+	                          files are wanted then use -f c|b and -o i
+	
+	                    -f t  Tophat files only, extracting accepted_hits.bam from
+	                          CRAM or BAM plus other files as specified by option -o
+	
+	   -n <number>      Record (line number) inside targets file to be processed
+	
+	   -R <reference>   Only needed if -f f and BAM is not present in iRODS
+	
+	   -o <options>     Use with  -f t  to specify extra files to be downloaded. 
+	                    In all cases files will be saved into ./tophat/<runid>/<rpt> 
+	                    and -d is ignored:
+	
+	                    -o a  All available Tophat files: accepted_hits.bam, 
+	                          unmapped.bam, *.bed
+	
+	                    -o b  Tophat's BAMs: accepted_hits.bam and unmapped.bam
+	
+	                    -o h  Tophat's accepted_hits.bam only (default)
+	
+	                    Use with  -f c|b  to download:
+	
+	                    -o a  All target tags if available (No PhiX/split files)
+	
+	                    -o i  Index file: .cram.crai or .bai correspondingly
+	
+	   -c <column n>    Use to indicate the column in the targets file to be used
+	                    as <SAVEDIR> if empty then ./<RUN>.
+	
+	   -h               Show usage message.
+	
+	   -H               Show this message.
 	
 	EOF
 }
@@ -41,26 +92,34 @@ usage(){
 #die() { echo >&2 -e "\nERROR: $@\n"; exit 1; }
 #printcmd_and_run() { echo "COMMAND: $@"; "$@"; code=$?; [ $code -ne 0 ] && die "command [$*] failed with error code $code"; }
 
-while getopts ":hi:d:f:n:r:t:o:c:k:" OPTION; do
+while getopts ":hHi:d:f:n:R:t:o:c:k:" OPTION; do
     case $OPTION in
-        h)
-            usage; exit 1;;
-        i)
-            TARGET=$OPTARG;;
+        c)
+            TARGETSCOLUMN=$OPTARG;;
         d)
             SDIR=$OPTARG;;
         f)
             FORMAT=$OPTARG;;
-        n)
-            RECNO=$OPTARG;;
-        r)
-            REFERENCE=$OPTARG;;
-        o)
-            FOPTION=$OPTARG;;
-        c)
-            TARGETSCOLUMN=$OPTARG;;
+        h)
+            usage; exit 1;;
+        H)
+            morehelp; exit 1;;
+        i)
+            TARGET=$OPTARG;;
         k)
             KEYTABPATH=$OPTARG;;
+        n)
+            RECNO=$OPTARG;;
+        o)
+            FOPTION=$OPTARG;;
+        p)
+            POSITION=$OPTARG;;
+        r)
+            RUNID=$OPTARG;;
+        t)
+            TAGINDEX=$OPTARG;;
+        R)
+            REFERENCE=$OPTARG;;
         \?)
             echo "Invalid option: -$OPTARG" >&2; exit 1;;
         :)
@@ -80,48 +139,23 @@ exitmessage(){
 }
 
 
-formatregex='^[bcftoi]$'
-tfoptionregex='^[abh]$'
-cboptionregex='^i$'
-tcoptionregex='^[[:digit:]]?$'
-defformat=c
-deftfoption=h
-wrongformat=0
-wrongfoption=0
-wrongtcoption=0
 defaultgzlevel=9
-nregex='^[0-9]+$'
 
-[ -z "$FORMAT" ] && FORMAT=$defformat
-[ -n "$FORMAT" ] && [[ $FORMAT =~ $formatregex ]] || wrongformat=1
+
+[ -z "$FORMAT" ] && FORMAT=c
+[ -n "$FORMAT" ] && [[ ! $FORMAT =~ ^[bcftoi]$ ]] && exitmessage "-f: Wrong output format: $FORMAT" 2
+
+
+wrongfoption=0
 if [ "$FORMAT" = "t" ]; then
-    [ -z "$FOPTION" ] && FOPTION=$deftfoption
-    [ -n "$FOPTION" ] && [[ $FOPTION =~ $tfoptionregex ]] || wrongfoption=1
+    [ -z "$FOPTION" ] && FOPTION=h
+    [[ ! $FOPTION =~ ^[abh]$ ]] && wrongfoption=1
 elif [[ $FORMAT =~ c|b ]] && [ -n "$FOPTION" ]; then
     [ -z "$FOPTION" ] && FOPTION=""
-    [[ ! $FOPTION =~ $cboptionregex ]] && wrongfoption=1
-fi    
-
-[ "$wrongformat" -eq "1" ] && exitmessage "-f: Wrong output format: $FORMAT" 2
+    [[ ! $FOPTION =~ ^i$ ]] && wrongfoption=1
+fi
 [ "$wrongfoption" -eq "1" ] && exitmessage "-o: Wrong file-type option for -f $FORMAT: $FOPTION" 2
 
-
-if env | grep -q ^KEYTABPATH=; then
-    echo "Using keytabs found in $KEYTABPATH"
-    USER=`whoami`
-    KEYTABFILE=${USER}.keytab
-    if [ -d "$KEYTABPATH" ] && [ -e "${KEYTABPATH}/${KEYTABFILE}" ]; then
-        echo "COMMAND: /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t ${KEYTABPATH}/${KEYTABFILE}"
-        /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t  "${KEYTABPATH}/${KEYTABFILE}"
-    else
-        exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?" 1
-        # example: /nfs/gapi/data/keytabs/${USER}.keytab
-    fi
-else
-    if [ -z "$KEYTABPATH" ]; then
-        exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?" 1
-    fi
-fi
 
 if [ -z "$TARGET" ]; then
 
@@ -132,7 +166,7 @@ elif [ -e "$TARGET" ]; then
 
     if [ -z "$LSB_JOBINDEX" ]; then
         if [ -n "$RECNO" ]; then
-            [ -n "$RECNO" ] && [[ $RECNO =~ $nregex ]] || exitmessage "-n: not a digit: $RECNO" 2
+            [ -n "$RECNO" ] && [[ $RECNO =~ ^[0-9]+$ ]] || exitmessage "-n: not a digit: $RECNO" 2
         else
             exitmessage "ERROR: Env variable LSB_JOBINDEX not set. Use -n?" 1            
         fi
@@ -146,7 +180,7 @@ elif [ -e "$TARGET" ]; then
 
     if [ -n "$TARGETSCOLUMN" ]; then
         
-        [[ ! $TARGETSCOLUMN =~ $tcoptionregex ]] && exitmessage "-c: Column not a number -c: $TARGETSCOLUMN" 1
+        [[ ! $TARGETSCOLUMN =~ ^[[:digit:]]?$ ]] && exitmessage "-c: Column not a number -c: $TARGETSCOLUMN" 1
 
         SDIR=`head -n ${LINE} ${TARGET} | tail -1 | awk -v col=$TARGETSCOLUMN 'BEGIN { FS = "\t" } ; {print $col}'`
         
@@ -174,6 +208,25 @@ XAMID=$RUN\_$POS
 [ -n "$TAG" ] && XAMID=$RUN\_$POS\#$TAG
 [ -n "$SPL" ] && XAMID=$RUN\_$POS\#$TAG\_$SPL
 
+exit
+
+
+if env | grep -q ^KEYTABPATH=; then
+    echo "Using keytabs found in $KEYTABPATH"
+    USER=`whoami`
+    KEYTABFILE=${USER}.keytab
+    if [ -d "$KEYTABPATH" ] && [ -e "${KEYTABPATH}/${KEYTABFILE}" ]; then
+        echo "COMMAND: /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t ${KEYTABPATH}/${KEYTABFILE}"
+        /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t  "${KEYTABPATH}/${KEYTABFILE}"
+    else
+        exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?" 1
+        # example: /nfs/gapi/data/keytabs/${USER}.keytab
+    fi
+else
+    if [ -z "$KEYTABPATH" ]; then
+        exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Use KEYTABPATH env var?" 1
+    fi
+fi
 
 
 LSBAM="$(ils /seq/${RUN}/${XAMID}.bam 2>&1)"
@@ -188,6 +241,7 @@ elif [ "$NOBAM" -eq "0" ]; then
 else
     exitmessage "Error trying to get bam/cram file for ${XAMID}: $LSBAM" 1
 fi
+
 
 
 if [ -z "$SDIR" ]; then
@@ -294,17 +348,6 @@ case "$FORMAT" in
             [ "$ret_code_unmp" -ne "0" ] && echo "iget: $UNMAPPEDFILE"
         fi
         ;;
-#    x)
-#        case "$OTHERFILE" in
-#            m)
-#                echo "COMMAND: /software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.deletions.bed  ${SDIR}/deletions.bed"
-#                DELETIONSFILE="$(/software/irods/icommands/bin/iget -KPvf /seq/${RUN}/${XAMID}.deletions.bed  ${SDIR}/deletions.bed 2>&1)"
-#                ret_code_dels=$?
-#                ;;
-#            *)
-#                echo "-o: Wrong file type option for -o: $OTHERFILE" && exit 2 ;;
-#        esac
-        
 esac
 
 exit $RET_CODE
