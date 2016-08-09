@@ -27,6 +27,8 @@ usage(){
 	                           <b>am files: accepted_hits.bam and unmapped.bam
 	                           <h>its: accepted_hits.bam only.
 	                           In all cases files will go to a ./tophat/<runid>/<rpt> directory (-d is ignored).
+	                        If -f = c|b then use -o i to download:
+	                           <i>ndex file: .cram.crai or .bai correspondingly.
 	   -c <column n>    Use to indicate the column in the targets file to be used as <savedir> if empty then ./<RUN>
 	   -h               Show this message.
 	
@@ -38,7 +40,7 @@ usage(){
 #die() { echo >&2 -e "\nERROR: $@\n"; exit 1; }
 #printcmd_and_run() { echo "COMMAND: $@"; "$@"; code=$?; [ $code -ne 0 ] && die "command [$*] failed with error code $code"; }
 
-while getopts ":hi:d:f:nr:t:o:k:" OPTION; do
+while getopts ":hi:d:f:nr:t:o:c:k:" OPTION; do
     case $OPTION in
         h)
             usage; exit 1;;
@@ -68,7 +70,7 @@ done
 
 formatregex='^[bcfto]$'
 tfoptionregex='^[abh]$'
-otherfilergx='^[mipsk]$'
+cboptionregex='^i$'
 tcoptionregex='^[[:digit:]]?$'
 defformat=c
 deftfoption=h
@@ -210,7 +212,9 @@ case "$FORMAT" in
         FQ1=$SDIR/${XAMID}_1.fq.gz
         FQ2=$SDIR/${XAMID}_2.fq.gz
         mkdir -p $SDIR
-        echo "COMMAND: /software/irods/icommands/bin/iget /seq/${RUN}/${XAMID}.$iformat - | /software/npg/bin/bamsort SO=queryname level=0 inputformat=$iformat $REFERENCEOPTION outputformat=bam index=0 tmpfile=./bamfq/ | /software/npg/bin/bamtofastq exclude=QCFAIL gz=1 level=$defaultgzlevel F=$FQ1 F2=$FQ2"
+        echo "COMMAND: /software/irods/icommands/bin/iget /seq/${RUN}/${XAMID}.$iformat - | \
+                       /software/npg/bin/bamsort SO=queryname level=0 inputformat=$iformat $REFERENCEOPTION outputformat=bam index=0 tmpfile=./bamfq/ | \
+                       /software/npg/bin/bamtofastq exclude=QCFAIL gz=1 level=$defaultgzlevel F=$FQ1 F2=$FQ2"
         /software/irods/icommands/bin/iget /seq/${RUN}/${XAMID}.$iformat - | \
             /software/npg/bin/bamsort SO=queryname level=0 inputformat=$iformat $REFERENCEOPTION outputformat=bam index=0 tmpfile=./bamfq/ | \
             /software/npg/bin/bamtofastq exclude=QCFAIL gz=1 level=$defaultgzlevel F=$FQ1 F2=$FQ2
