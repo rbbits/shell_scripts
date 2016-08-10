@@ -158,6 +158,7 @@ exitmessage(){
 VERBOSE=${VERBOSE-0}
 
 [ -z "$FORMAT" ] && FORMAT=c
+
 [ -n "$FORMAT" ] && [[ ! $FORMAT =~ ^[bcftiB]$ ]] && exitmessage "-f: Wrong output format: $FORMAT" 2
 
 wrongfoption=0
@@ -178,7 +179,9 @@ fi
 [[ -n $TARGETSCOLUMN || -n $RECNO ]] && [[ -z "$TARGET" || ! -e "$TARGET" ]] && exitmessage "$0: options -c or -n (column or record number) were provided but no cannot access file $TARGET" 1
 
 if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
+    
     MODE=i
+
     if [ -z "$LSB_JOBINDEX" ]; then
         if [ -n "$RECNO" ]; then
             [ -n "$RECNO" ] && [[ $RECNO =~ ^[0-9]+$ ]] || exitmessage "-n: not a digit: $RECNO" 2
@@ -186,21 +189,27 @@ if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
             exitmessage "ERROR: Env variable LSB_JOBINDEX not set. Use -n?" 1            
         fi
     fi
+
     LINE=${LSB_JOBINDEX:-$RECNO}
     RUN=`head -n ${LINE} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $2}'`
     POS=`head -n ${LINE} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $3}'`
     TAG=`head -n ${LINE} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $4}'`
+
     if [ -n "$TARGETSCOLUMN" ]; then
         [[ ! $TARGETSCOLUMN =~ ^[[:digit:]]?$ ]] && exitmessage "-c: Column not a number -c: $TARGETSCOLUMN" 1
         SDIR=`head -n ${LINE} ${TARGET} | tail -1 | awk -v col=$TARGETSCOLUMN 'BEGIN { FS = "\t" } ; {print $col}'`
         [ "$VERBOSE" -eq 1 ] && echo "[INFO] Using column ${TARGETSCOLUMN} with value: ${SDIR}"
     fi
+    
     XAMID=$RUN\_$POS
     [ -n "$TAG" ] && XAMID=$RUN\_$POS\#$TAG
     [ -n "$SPL" ] && XAMID=$RUN\_$POS\#$TAG\_$SPL
+
 elif [ -n "$TARGET" ]; then
+
     MODE=i
     regex='^([[:digit:]]+)_([[:digit:]]+)(_([[:alpha:]]+))?(#([[:digit:]]+))?(_([[:alpha:]]+))?$'
+
     if [[ "$TARGET" =~ $regex ]]; then
         RUN="${BASH_REMATCH[1]}";
         POS="${BASH_REMATCH[2]}";
@@ -209,12 +218,18 @@ elif [ -n "$TARGET" ]; then
     else
         exitmessage "-i: Target '$TARGET' doesn't look right. Example: 14940_3#34_human" 1
     fi
+
     XAMID=$RUN\_$POS
     [ -n "$TAG" ] && XAMID=$RUN\_$POS\#$TAG
     [ -n "$SPL" ] && XAMID=$RUN\_$POS\#$TAG\_$SPL
+    
 elif [ -n "$TARGETR" ]; then
+
+    IMETA_EXE=`which imeta`
+    
     MODE=r
     regex='^([[:digit:]]+)(_([[:digit:]]*))?(#([[:digit:]]*))?(_([[:alpha:]]*))?'
+
     if [[ "$TARGETR" =~ $regex ]]; then
         RUN="${BASH_REMATCH[1]}";
         POS="${BASH_REMATCH[3]}";
@@ -223,12 +238,25 @@ elif [ -n "$TARGETR" ]; then
     else
         exitmessage "-r: Target '$TARGETR' doesn't look right" 1
     fi
+
+    case "$FORMAT" in
+        [bB])
+            FTYPE_CMD=' and type = bam ';;
+        c)
+            FTYPE_CMD=' and type = cram ';;
+        *)
+            FTYPE_CMD="";;
+    esac
+
     QU_CODE=0
+
     [ -n "$RUN" ] && QU_CODE=1 || exitmessage "-i: At least a run id must be provided" 1
     [ -n "$POS" ] && set "QU_CODE += 2" && QU_CMD+=" and lane "'>='" $POS and lane "'<='" $POS "
     [ -n "$TAG" ] && set "QU_CODE += 4" && QU_CMD+=" and tag_index = $TAG "
     [ -n "$SPL" ] && set "QU_CODE += 8" && QU_CMD+=" and alignment_filter = $SPL "
-    META_QU_CMD="/software/irods/icommands/bin/imeta qu -z seq -d id_run = $RUN $QU_CMD and target "'>='" 1"
+
+    META_QU_CMD="$IMETA_EXE qu -z seq -d id_run = $RUN $QU_CMD and target "'>='" 1 $FTYPE_CMD"
+    
 fi
 
 #echo DEBUG: run: $RUN  pos: $POS  tag: $TAG  spl: $SPL qu_code: $qu_code 
@@ -273,11 +301,9 @@ if [ "$MODE" = "r" ]; then
         declare -a HIT_LIST=( `grep -oP "(?<=dataObj: ).*$" <<< "$META_INFO"` )
         NUM_HITS="${#HIT_LIST[@]}"
         if [ "$NUM_HITS" -ge "1" ]; then
-            printf "Found %d file(s). Do you want to download all/some/none? " "$NUM_HITS"
+            printf "Found %d file(s). Do you want to download all/some/none/list? " "$NUM_HITS"
             read ANSWER
             case "$ANSWER" in
-                n*)
-                    exitmessage "Bye!" 0;;
                 a*)
                     printf -- "INFO: Downloading all of the files ...\n"
                     RET_CODE=0
@@ -288,8 +314,13 @@ if [ "$MODE" = "r" ]; then
                         set "RET_CODE += $?"
                         [ "$?" -eq 0 ] && printf "INFO: Succesfully downloaded %s\n\n" "${IRODS_FILE}"
                     done;;
+                l*)
+                    printf '%s |' "${HIT_LIST[@]}";
+                    exitmessage "Bye!" 0;;
+                n*)
+                    exitmessage "Bye!" 0;;
                 s*)
-                    printf -- "Downloading some of the files only press [Ss] to stop ...\n\n"
+                    printf -- "Downloading some of the files only. Press [S] or [s] to stop ...\n\n"
                     RET_CODE=0
                     for IRODS_FILE in "${HIT_LIST[@]}"; do
                         REPLY=""
