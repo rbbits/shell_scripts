@@ -52,8 +52,7 @@ morehelp(){
 	
 	   -f <format>      Download format: 
 	
-	                    -f b  BAM file, if exists, otherwise CRAM->BAM will be 
-	                          enforced unless -n is used
+	                    -f b  BAM file, fail if doest't exist or can't be accessed
 	
 	                    -f c  CRAM file. This is the default
 	
@@ -64,6 +63,8 @@ morehelp(){
 	
 	                    -f t  Tophat files only, extracting accepted_hits.bam from
 	                          CRAM or BAM plus other files as specified by option -o
+	
+	                    -f B  BAM file, if only CRAM exist convert CRAM->BAM
 	
 	   -n <number>      Record (line number) inside targets file to be processed
 	
@@ -141,6 +142,8 @@ while getopts ":c:d:f:hHi:k:n:o:r:R:t:v" OPTION; do
     esac
 done
 
+# function to print messages
+# to STDOUT or STDERR
 exitmessage(){
     declare EXITMESG=$1
     declare EXITCODE=$2
@@ -155,7 +158,7 @@ exitmessage(){
 VERBOSE=${VERBOSE-0}
 
 [ -z "$FORMAT" ] && FORMAT=c
-[ -n "$FORMAT" ] && [[ ! $FORMAT =~ ^[bcfti]$ ]] && exitmessage "-f: Wrong output format: $FORMAT" 2
+[ -n "$FORMAT" ] && [[ ! $FORMAT =~ ^[bcftiB]$ ]] && exitmessage "-f: Wrong output format: $FORMAT" 2
 
 wrongfoption=0
 if [ "$FORMAT" = "t" ]; then
@@ -163,7 +166,7 @@ if [ "$FORMAT" = "t" ]; then
     [[ ! $FOPTION =~ ^[abh]$ ]] && wrongfoption=1
 elif [[ $FORMAT =~ c|b ]] && [ -n "$FOPTION" ]; then
     [ -z "$FOPTION" ] && FOPTION=""
-    [[ ! $FOPTION =~ ^i$ ]] && wrongfoption=1
+    [[ ! $FOPTION =~ ^[ai]$ ]] && wrongfoption=1
 fi
 [ "$wrongfoption" -eq "1" ] && exitmessage "-o: Wrong file-type option for -f $FORMAT: $FOPTION" 2
 
@@ -171,6 +174,8 @@ fi
 
 [ -n "$TARGET" ] && [ -n "$TARGETR" ] && exitmessage "$0: only one target option can be used: -i|r" 1
 [ -z "$TARGET" ] && [ -z "$TARGETR" ] && exitmessage "$0: at least one target option must be used: -i|r" 1
+
+[[ -n $TARGETSCOLUMN || -n $RECNO ]] && [[ -z "$TARGET" || ! -e "$TARGET" ]] && exitmessage "$0: options -c or -n (column or record number) were provided but no cannot access file $TARGET" 1
 
 if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
     MODE=i
@@ -188,6 +193,7 @@ if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
     if [ -n "$TARGETSCOLUMN" ]; then
         [[ ! $TARGETSCOLUMN =~ ^[[:digit:]]?$ ]] && exitmessage "-c: Column not a number -c: $TARGETSCOLUMN" 1
         SDIR=`head -n ${LINE} ${TARGET} | tail -1 | awk -v col=$TARGETSCOLUMN 'BEGIN { FS = "\t" } ; {print $col}'`
+        [ "$VERBOSE" -eq 1 ] && echo "[INFO] Using column ${TARGETSCOLUMN} with value: ${SDIR}"
     fi
     XAMID=$RUN\_$POS
     [ -n "$TAG" ] && XAMID=$RUN\_$POS\#$TAG
@@ -225,26 +231,30 @@ elif [ -n "$TARGETR" ]; then
     META_QU_CMD="/software/irods/icommands/bin/imeta qu -z seq -d id_run = $RUN $QU_CMD and target "'>='" 1"
 fi
 
-echo DEBUG: run: $RUN  pos: $POS  tag: $TAG  spl: $SPL qu_code: $qu_code 
-echo DEBUG: meta_qu: $META_QU_CMD
+#echo DEBUG: run: $RUN  pos: $POS  tag: $TAG  spl: $SPL qu_code: $qu_code 
+#echo DEBUG: meta_qu: $META_QU_CMD
+USER=`whoami`
 
-if env | grep -q ^KEYTABPATH=; then
-    [ "$VERBOSE" -eq 1 ] && echo "INFO: Using keytabs found in $KEYTABPATH"
-    USER=`whoami`
-    KEYTABFILE=${USER}.keytab
-    if [ -d "$KEYTABPATH" ] && [ -e "${KEYTABPATH}/${KEYTABFILE}" ]; then
-        [ "$VERBOSE" -eq 1 ] && echo "COMMAND: /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t ${KEYTABPATH}/${KEYTABFILE}"
-        /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t  "${KEYTABPATH}/${KEYTABFILE}"
-    else
-        exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Add? KEYTABPATH=/path/to/keytabs to startup file (e.g. ~/.bash_profile)" 1
-    fi
+if [ "$USER" = "srpipe" ]; then
+    umask 0002
 else
-    if [ -z "$KEYTABPATH" ]; then
-        exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Add? KEYTABPATH=/path/to/keytabs to startup file (e.g. ~/.bash_profile)" 1
+    if env | grep -q ^KEYTABPATH=; then
+        [ "$VERBOSE" -eq 1 ] && echo "INFO: Using keytabs found in $KEYTABPATH"
+        KEYTABFILE=${USER}.keytab
+        if [ -d "$KEYTABPATH" ] && [ -e "${KEYTABPATH}/${KEYTABFILE}" ]; then
+            [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t ${KEYTABPATH}/${KEYTABFILE}"
+            /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t  "${KEYTABPATH}/${KEYTABFILE}"
+        else
+            exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Add? KEYTABPATH=/path/to/keytabs to startup file (e.g. ~/.bash_profile)" 1
+        fi
+    else
+        if [ -z "$KEYTABPATH" ]; then
+            exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Add? KEYTABPATH=/path/to/keytabs to startup file (e.g. ~/.bash_profile)" 1
+        fi
     fi
 fi
 
-
+# TODO: don't save in ./$RUN/ but wherever the user decides or ./ by default
 if [ -z "$SDIR" ]; then
     SDIR=${RUN}
 else
@@ -257,7 +267,7 @@ RET_CODE=1
 #echo DEBUG: mode: $MODE
 if [ "$MODE" = "r" ]; then
     
-    [ "$VERBOSE" -eq 1 ] && printf -- "COMMAND: $META_QU_CMD\n"
+    [ "$VERBOSE" -eq 1 ] && printf -- "[COMMAND] $META_QU_CMD\n"
     META_INFO="$($META_QU_CMD)"
     if [ "$?" -eq "0" ]; then
         declare -a HIT_LIST=( `grep -oP "(?<=dataObj: ).*$" <<< "$META_INFO"` )
@@ -273,7 +283,7 @@ if [ "$MODE" = "r" ]; then
                     RET_CODE=0
                     mkdir -p $SDIR
                     for IRODS_FILE in "${HIT_LIST[@]}"; do
-                        [ "$VERBOSE" -eq 1 ] && printf -- "COMMAND: `which iget` -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}\n"
+                        [ "$VERBOSE" -eq 1 ] && printf -- "[COMMAND] `which iget` -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}\n"
                         iget -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}
                         [ "$?" -eq 0 ] && printf "INFO: Succesfully downloaded %s\n\n" "${IRODS_FILE}"
                         set "RET_CODE += $?"
@@ -288,7 +298,7 @@ if [ "$MODE" = "r" ]; then
                             read -n 1 REPLY
                             if [[ $REPLY =~ y|Y ]]; then
                                 mkdir -p $SDIR
-                                [ "$VERBOSE" -eq 1 ] && printf -- "\nCOMMAND: `which iget` -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}\n"
+                                [ "$VERBOSE" -eq 1 ] && printf -- "\n[COMMAND] `which iget` -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}\n"
                                 iget -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}
                                 [ "$?" -eq "0" ] && printf "INFO: Succesfully downloaded %s\n\n" "${IRODS_FILE}"
                                 set "RET_CODE += $?"
@@ -303,7 +313,7 @@ if [ "$MODE" = "r" ]; then
             exitmessage "$META_INFO" 0
         fi
     else
-        exitmessage "ERROR: $META_INFO" 2 #I couldn't find any files with the following information:  run: $RUN  pos: $POS  tag: $TAG  spl: $SPL" 2
+        exitmessage "[ERROR] $META_INFO" 2 #I couldn't find any files with the following information:  run: $RUN  pos: $POS  tag: $TAG  spl: $SPL" 2
     fi
 
 elif [ "$MODE" = "i" ]; then
@@ -318,7 +328,7 @@ elif [ "$MODE" = "i" ]; then
         iformat=bam
         ixformat=bai
     else
-        exitmessage "Error trying to get bam/cram file for ${XAMID}: $LSBAM" 1
+        exitmessage "[ERROR] Error trying to get bam/cram file for ${XAMID}: $LSBAM" 1
     fi
 
     RET_CODE=0
@@ -326,38 +336,28 @@ elif [ "$MODE" = "i" ]; then
     case "$FORMAT" in
         b)
             mkdir -p $SDIR
-            if [ "$NOBAM" -eq "4" ]; then
-                echo "INFO: No bam format file present in iRODS for ${XAMID}: $LSBAM"
-                echo "INFO: Converting cram->bam ..."
-                [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which iget` -K /seq/${RUN}/${XAMID}.cram - | /software/solexa/bin/scramble -I cram -O bam - ${SDIR}/${XAMID}.bam"
-                iget -K /seq/${RUN}/${XAMID}.cram - | scramble -I cram -O bam - ${SDIR}/${XAMID}.bam
-                RET_CODE=$?
-                if [ "$FOPTION" = "i" ]; then
-                    [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which samtools1` index ${SDIR}/${XAMID}.bam"
-                    echo "INFO: Indexing cram or bam ..."
-                    samtools1 index ${SDIR}/${XAMID}.bam
-                    [ "$?" -ne "0" ] && echo "WARNING: Failed to create index file for ${SDIR}/${XAMID}.bam"
-                fi
-            elif [ "$NOBAM" -eq "0" ]; then
-                [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which iget` -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam"
+            if [ "$NOBAM" -eq "0" ]; then
+                [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam"
                 iget -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam
                 RET_CODE=$?
                 if [ "$FOPTION" = "i" ]; then
-                    [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which iget` -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai"
+                    [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai"
                     iget -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai
-                    [ "$?" -ne "0" ] && echo "WARNING: Failed to download index file for ${SDIR}/${XAMID}.bam"
+                    [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for ${SDIR}/${XAMID}.bam"
                 fi
+            else
+                exitmessage "[ERROR] No bam format file present in iRODS for ${XAMID}: $LSBAM" 1
             fi
             ;;
         c)
             mkdir -p $SDIR
-            [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which iget` -KPvf /seq/${RUN}/${XAMID}.cram ${SDIR}/${XAMID}.cram"
+            [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.cram ${SDIR}/${XAMID}.cram"
             iget -KPvf /seq/${RUN}/${XAMID}.cram ${SDIR}/${XAMID}.cram
             RET_CODE=$?
             if [ "$FOPTION" = "i" ]; then
-                [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which iget` -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}"
+                [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}"
                 iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}
-                [ "$?" -ne "0" ] && echo "WARNING: Failed to download index file for ${SDIR}/${XAMID}.bam"
+                [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for ${SDIR}/${XAMID}.bam"
             fi
             ;;
         f)
@@ -375,13 +375,13 @@ elif [ "$MODE" = "i" ]; then
             FQ1=$SDIR/${XAMID}_1.fq.gz
             FQ2=$SDIR/${XAMID}_2.fq.gz
             mkdir -p $SDIR
-            [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which iget` /seq/${RUN}/${XAMID}.$iformat - | `which bamsort` SO=queryname level=0 inputformat=$iformat $REFERENCEOPTION outputformat=bam index=0 tmpfile=./bamfq/tmp_${XAMID} | `which bamtofastq` inputformat=bam exclude=QCFAIL T=./bamfq/tmp_b2fq_${XAMID} gz=1 level=9 F=$FQ1 F2=$FQ2"
+            [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` /seq/${RUN}/${XAMID}.$iformat - | `which bamsort` SO=queryname level=0 inputformat=$iformat $REFERENCEOPTION outputformat=bam index=0 tmpfile=./bamfq/tmp_${XAMID} | `which bamtofastq` inputformat=bam exclude=QCFAIL T=./bamfq/tmp_b2fq_${XAMID} gz=1 level=9 F=$FQ1 F2=$FQ2"
             iget /seq/${RUN}/${XAMID}.$iformat - | bamsort SO=queryname level=0 inputformat=$iformat $REFERENCEOPTION outputformat=bam index=0 tmpfile=./bamfq/tmp_${XAMID} | bamtofastq inputformat=bam exclude=QCFAIL T=./bamfq/tmp_b2fq_${XAMID} gz=1 level=9 F=$FQ1 F2=$FQ2
             RET_CODE=$?
             ;;
         i)
             mkdir -p $SDIR
-            [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which iget` -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}"
+            [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}"
             iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}
             RET_CODE=$?
             ;;       
@@ -392,19 +392,19 @@ elif [ "$MODE" = "i" ]; then
             ret_code_dels=0
             ret_code_hits=0
             ret_code_unmp=0
-            [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which samtools1` view -bh -F 0x4 -o ${SDIR}/accepted_hits.bam irods:/seq/${RUN}/${XAMID}.$iformat"
+            [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which samtools1` view -bh -F 0x4 -o ${SDIR}/accepted_hits.bam irods:/seq/${RUN}/${XAMID}.$iformat"
             ACCEPTEDHITSFILE="$(samtools1 view -bh -F 0x4 -o ${SDIR}/accepted_hits.bam irods:/seq/${RUN}/${XAMID}.$iformat 2>&1)"
             ret_code_hits=$?
             if [[ $FOPTION =~ a|b ]] ; then
-                [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which samtools1` view -bh -f 0x4 -o ${SDIR}/unmapped.bam irods:/seq/${RUN}/${XAMID}.$iformat"
+                [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which samtools1` view -bh -f 0x4 -o ${SDIR}/unmapped.bam irods:/seq/${RUN}/${XAMID}.$iformat"
                 UNMAPPEDFILE="$(samtools1 view -bh -f 0x4 -o ${SDIR}/unmapped.bam irods:/seq/${RUN}/${XAMID}.$iformat 2>&1)"
                 ret_code_unmp=$?
             fi
             if [ "$FOPTION" = "a" ]; then
-                [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which iget` -KPvf /seq/${RUN}/${XAMID}.junctions.bed  ${SDIR}/junctions.bed"
+                [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.junctions.bed  ${SDIR}/junctions.bed"
                 JUNCTIONSFILE="$(iget -KPvf /seq/${RUN}/${XAMID}.junctions.bed  ${SDIR}/junctions.bed 2>&1)"
                 ret_code_junc=$?
-                [ "$VERBOSE" -eq 1 ] && echo "COMMAND: `which iget` -KPvf /seq/${RUN}/${XAMID}.deletions.bed  ${SDIR}/deletions.bed"
+                [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.deletions.bed  ${SDIR}/deletions.bed"
                 DELETIONSFILE="$(iget -KPvf /seq/${RUN}/${XAMID}.deletions.bed  ${SDIR}/deletions.bed 2>&1)"
                 ret_code_dels=$?
             fi
@@ -417,9 +417,34 @@ elif [ "$MODE" = "i" ]; then
                 [ "$ret_code_unmp" -ne "0" ] && echo "iget: $UNMAPPEDFILE"
             fi
             ;;
+        B)
+            mkdir -p $SDIR
+            if [ "$NOBAM" -eq "4" ]; then
+                echo "[INFO] No bam format file present in iRODS for ${XAMID}: $LSBAM"
+                echo "[INFO] Converting cram->bam ..."
+                [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -K /seq/${RUN}/${XAMID}.cram - | /software/solexa/bin/scramble -I cram -O bam - ${SDIR}/${XAMID}.bam"
+                iget -K /seq/${RUN}/${XAMID}.cram - | scramble -I cram -O bam - ${SDIR}/${XAMID}.bam
+                RET_CODE=$?
+                if [ "$FOPTION" = "i" ]; then
+                    [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which samtools1` index ${SDIR}/${XAMID}.bam"
+                    echo "[INFO] Indexing cram or bam ..."
+                    samtools1 index ${SDIR}/${XAMID}.bam
+                    [ "$?" -ne "0" ] && echo "[WARNING] Failed to create index file for ${SDIR}/${XAMID}.bam"
+                fi
+            elif [ "$NOBAM" -eq "0" ]; then
+                [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam"
+                iget -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam
+                RET_CODE=$?
+                if [ "$FOPTION" = "i" ]; then
+                    [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai"
+                    iget -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai
+                    [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for ${SDIR}/${XAMID}.bam"
+                fi
+            fi
+            ;;            
     esac
 fi
 
-[ "$RET_CODE" -ne 0 ] && printf -- "\nERROR: Something bad happened!\n"
+[ "$RET_CODE" -ne 0 ] && printf -- "\n[ERROR]: Something bad happened!\n"
 
 exit $RET_CODE
