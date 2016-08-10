@@ -6,9 +6,11 @@ usage(){
 
 	$0  -i  RUN_POSITION[#TAG[_SPLIT]]   [ -k|d|f|n|r|o|c VALUE ] [ -v ]
 	$0  -r  RUN[[_POSITION][#TAG][_SPLIT]]   [ -d VALUE ] [ -v ]
-
+	$0  -s  STUDYID   [ -d VALUE ] [ -v ]
+	
 	Examples: 
 
+	$0 -i targets.txt        # a targets file containing specific id's and other info (e.g. save dir)
 	$0 -i 12345_1#1_yhuman   # specific target
 	$0 -r 12345              # everything for run 12345
 	$0 -r 12345_3            # everything in lane 3 in run 12345
@@ -37,6 +39,10 @@ morehelp(){
 	OR:
 
 	   -r <run info>    Run
+	
+	OR:
+	
+	   -s <study_id>    Study ID
 	
 	Optional:
 
@@ -105,7 +111,7 @@ morehelp(){
 #die() { echo >&2 -e "\nERROR: $@\n"; exit 1; }
 #printcmd_and_run() { echo "COMMAND: $@"; "$@"; code=$?; [ $code -ne 0 ] && die "command [$*] failed with error code $code"; }
 
-while getopts ":c:d:f:hHi:k:n:o:r:R:t:v" OPTION; do
+while getopts ":c:d:f:hHi:k:n:o:r:R:s:t:v" OPTION; do
     case $OPTION in
         c)
             TARGETSCOLUMN=$OPTARG;;
@@ -118,7 +124,7 @@ while getopts ":c:d:f:hHi:k:n:o:r:R:t:v" OPTION; do
         H)
             morehelp; exit 1;;
         i)
-            TARGET=$OPTARG;;
+            ITARGET=$OPTARG;;
         k)
             KEYTABPATH=$OPTARG;;
         n)
@@ -128,7 +134,9 @@ while getopts ":c:d:f:hHi:k:n:o:r:R:t:v" OPTION; do
         p)
             POSITION=$OPTARG;;
         r)
-            TARGETR=$OPTARG;;
+            RTARGET=$OPTARG;;
+        s)
+            STARGET=$OPTARG;;
         t)
             TAGINDEX=$OPTARG;;
         R)
@@ -172,13 +180,16 @@ fi
 [ "$wrongfoption" -eq "1" ] && exitmessage "-o: Wrong file-type option for -f $FORMAT: $FOPTION" 2
 
 
+# TODO: validate that only 1 target option is used
+#       validation of at least one target option is used seems to be correct
+[ -n "$ITARGET" ] && [[ -n "$RTARGET" || -n "$STARGET" ]] && exitmessage "$0: only one target option can be used: -i|r|s" 1
+[ -z "$ITARGET" ] && [ -z "$RTARGET" ] && [ -z "$STARGET" ] && exitmessage "$0: at least one target option must be used: -i|r|s" 1
 
-[ -n "$TARGET" ] && [ -n "$TARGETR" ] && exitmessage "$0: only one target option can be used: -i|r" 1
-[ -z "$TARGET" ] && [ -z "$TARGETR" ] && exitmessage "$0: at least one target option must be used: -i|r" 1
+[[ -n $TARGETSCOLUMN || -n $RECNO ]] && [[ -z "$ITARGET" || ! -e "$ITARGET" ]] && exitmessage "$0: options -c or -n (column or record number) were provided but no cannot access file $ITARGET" 1
 
-[[ -n $TARGETSCOLUMN || -n $RECNO ]] && [[ -z "$TARGET" || ! -e "$TARGET" ]] && exitmessage "$0: options -c or -n (column or record number) were provided but no cannot access file $TARGET" 1
-
-if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
+IMETA_EXE=`which imeta`
+    
+if [ -n "$ITARGET" ] && [ -e "$ITARGET" ]; then
     
     MODE=i
 
@@ -191,13 +202,13 @@ if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
     fi
 
     LINE=${LSB_JOBINDEX:-$RECNO}
-    RUN=`head -n ${LINE} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $2}'`
-    POS=`head -n ${LINE} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $3}'`
-    TAG=`head -n ${LINE} ${TARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $4}'`
+    RUN=`head -n ${LINE} ${ITARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $2}'`
+    POS=`head -n ${LINE} ${ITARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $3}'`
+    TAG=`head -n ${LINE} ${ITARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $4}'`
 
     if [ -n "$TARGETSCOLUMN" ]; then
         [[ ! $TARGETSCOLUMN =~ ^[[:digit:]]?$ ]] && exitmessage "-c: Column not a number -c: $TARGETSCOLUMN" 1
-        SDIR=`head -n ${LINE} ${TARGET} | tail -1 | awk -v col=$TARGETSCOLUMN 'BEGIN { FS = "\t" } ; {print $col}'`
+        SDIR=`head -n ${LINE} ${ITARGET} | tail -1 | awk -v col=$TARGETSCOLUMN 'BEGIN { FS = "\t" } ; {print $col}'`
         [ "$VERBOSE" -eq 1 ] && echo "[INFO] Using column ${TARGETSCOLUMN} with value: ${SDIR}"
     fi
     
@@ -205,38 +216,36 @@ if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
     [ -n "$TAG" ] && XAMID=$RUN\_$POS\#$TAG
     [ -n "$SPL" ] && XAMID=$RUN\_$POS\#$TAG\_$SPL
 
-elif [ -n "$TARGET" ]; then
+elif [ -n "$ITARGET" ]; then
 
     MODE=i
     regex='^([[:digit:]]+)_([[:digit:]]+)(_([[:alpha:]]+))?(#([[:digit:]]+))?(_([[:alpha:]]+))?$'
 
-    if [[ "$TARGET" =~ $regex ]]; then
+    if [[ "$ITARGET" =~ $regex ]]; then
         RUN="${BASH_REMATCH[1]}";
         POS="${BASH_REMATCH[2]}";
         TAG="${BASH_REMATCH[6]}";
         SPL="${BASH_REMATCH[8]}";
     else
-        exitmessage "-i: Target '$TARGET' doesn't look right. Example: 14940_3#34_human" 1
+        exitmessage "-i: Target '$ITARGET' doesn't look right. Example: 14940_3#34_human" 1
     fi
 
     XAMID=$RUN\_$POS
     [ -n "$TAG" ] && XAMID=$RUN\_$POS\#$TAG
     [ -n "$SPL" ] && XAMID=$RUN\_$POS\#$TAG\_$SPL
     
-elif [ -n "$TARGETR" ]; then
+elif [ -n "$RTARGET" ]; then
 
-    IMETA_EXE=`which imeta`
-    
     MODE=r
     regex='^([[:digit:]]+)(_([[:digit:]]*))?(#([[:digit:]]*))?(_([[:alpha:]]*))?'
 
-    if [[ "$TARGETR" =~ $regex ]]; then
+    if [[ "$RTARGET" =~ $regex ]]; then
         RUN="${BASH_REMATCH[1]}";
         POS="${BASH_REMATCH[3]}";
         TAG="${BASH_REMATCH[5]}";
         SPL="${BASH_REMATCH[7]}";
     else
-        exitmessage "-r: Target '$TARGETR' doesn't look right" 1
+        exitmessage "-r: target '$RTARGET' doesn't look right" 1
     fi
 
     case "$FORMAT" in
@@ -256,7 +265,35 @@ elif [ -n "$TARGETR" ]; then
     [ -n "$SPL" ] && set "QU_CODE += 8" && QU_CMD+=" and alignment_filter = $SPL "
 
     META_QU_CMD="$IMETA_EXE qu -z seq -d id_run = $RUN $QU_CMD and target "'>='" 1 $FTYPE_CMD"
+
+elif [ -n "$STARGET" ]; then
+
+    MODE=s
+    regex='^[[:digit:]]+$'
+
+    echo $STARGET
     
+    if [[ "$STARGET" =~ $regex ]]; then
+        STUDYID=$STARGET
+    else
+        exitmessage "-s: target study id '$STARGET' doesn't look right" 1
+    fi
+    
+    case "$FORMAT" in
+        [bB])
+            FTYPE_CMD=' and type = bam ';;
+        c)
+            FTYPE_CMD=' and type = cram ';;
+        *)
+            FTYPE_CMD="";;
+    esac
+
+    QU_CODE=0
+
+    [ -n "$STUDYID" ] && QU_CODE=1 || exitmessage "-s: A study id must be provided" 1
+
+    META_QU_CMD="$IMETA_EXE qu -z seq -d study_id = $STUDYID and target = 1 $FTYPE_CMD"
+
 fi
 
 #echo DEBUG: run: $RUN  pos: $POS  tag: $TAG  spl: $SPL qu_code: $qu_code 
@@ -311,8 +348,8 @@ if [ "$MODE" = "r" ]; then
                     for IRODS_FILE in "${HIT_LIST[@]}"; do
                         [ "$VERBOSE" -eq 1 ] && printf -- "[COMMAND] `which iget` -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}\n"
                         iget -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}
-                        set "RET_CODE += $?"
                         [ "$?" -eq 0 ] && printf "INFO: Succesfully downloaded %s\n\n" "${IRODS_FILE}"
+                        let "RET_CODE += $?"
                     done;;
                 l*)
                     printf '%s |' "${HIT_LIST[@]}";
@@ -331,8 +368,8 @@ if [ "$MODE" = "r" ]; then
                                 mkdir -p $SDIR
                                 [ "$VERBOSE" -eq 1 ] && printf -- "\n[COMMAND] `which iget` -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}\n"
                                 iget -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}
-                                set "RET_CODE += $?"
                                 [ "$?" -eq "0" ] && printf "Succesfully downloaded %s\n\n" "${IRODS_FILE}"
+                                let "RET_CODE += $?"
                             fi
                             [[ $REPLY =~ n|N ]] && printf "\nSkipping %s\n\n" "$IRODS_FILE"
                             [[ $REPLY =~ S|s ]] && printf -- "\nStopping downloads. Bye!\n\n"
@@ -396,6 +433,7 @@ elif [ "$MODE" = "i" ]; then
                 [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}"
                 IGETIXCMD="$(iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat} 2>&1)"
                 [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for [${SDIR}/${XAMID}.bam]: " && echo "  $IGETIXCMD"
+                #elif [ "$FOPTION" = "a" ]; then
             fi
             ;;
         f)
@@ -480,6 +518,37 @@ elif [ "$MODE" = "i" ]; then
             fi
             ;;            
     esac
+
+elif [ "$MODE" = "s" ]; then
+
+    [ "$VERBOSE" -eq 1 ] && printf -- "[COMMAND] $META_QU_CMD\n"
+    META_INFO="$($META_QU_CMD 2>&1)"
+    if [ "$?" -eq "0" ]; then
+        declare -a HITS_LIST=( `grep -oP "(?<=dataObj: ).*$" <<< "$META_INFO"` )
+        declare -a COLL_LIST=( `grep -oP "(?<=collection: ).*$" <<< "$META_INFO"` )
+        NUM_HITS=${#HITS_LIST[@]}
+        if [ ! "$NUM_HITS" -ge "1" ]; then
+            RET_CODE=1
+            exitmessage "[WARNING] $META_INFO" $RET_CODE
+        else
+            [ "$VERBOSE" -eq 1 ] && printf "Found %d file(s)" "$NUM_HITS"
+        fi
+        [ "$VERBOSE" -eq 1 ] && printf -- "INFO: Downloading all of the files ...\n"
+        RET_CODE=0
+        let "NUM_HITS-=1"
+        for IDX in $(seq  0  $NUM_HITS); do
+            IRODS_FILE="${COLL_LIST[$IDX]}/${HITS_LIST[$IDX]}"
+            if [[ ${COLL_LIST[$IDX]} =~ ([[:digit:]]+) ]]; then
+                RUN="${BASH_REMATCH[1]}";
+            fi
+            [[ ! -e ./irods//poo || ! -h ./irods//poo ]] && mkdir -p $SDIR/$RUN
+            [ "$VERBOSE" -eq 1 ] && printf -- "[COMMAND] `which iget` -KPvf ${IRODS_FILE} ${HITS_LIST[$IDX]}\n"
+            iget -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}
+            [ "$?" -eq 0 ] &&[ "$VERBOSE" -eq 1 ] && printf "INFO: Succesfully downloaded %s\n\n" "${IRODS_FILE}"
+            let "RET_CODE += $?"
+        done
+    fi
+    
 fi
 
 if [ "$RET_CODE" -ne 0 ]; then
