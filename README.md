@@ -14,7 +14,7 @@ Scripts used for the analysis of different types of data:
 
 ### p4_reprocessing
 
-Scripts used in the remapping of samples using [https://github.com/wtsi-npg/p4 P4]
+Scripts used in the remapping of samples using [P4] (https://github.com/wtsi-npg/p4)
 
 ### useful
 
