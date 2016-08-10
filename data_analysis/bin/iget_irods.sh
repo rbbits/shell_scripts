@@ -245,11 +245,11 @@ else
             [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t ${KEYTABPATH}/${KEYTABFILE}"
             /usr/bin/kinit  ${USER}\@INTERNAL.SANGER.AC.UK -k -t  "${KEYTABPATH}/${KEYTABFILE}"
         else
-            exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Add? KEYTABPATH=/path/to/keytabs to startup file (e.g. ~/.bash_profile)" 1
+            exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Try export KEYTABPATH=/path/to/keytabs?" 1
         fi
     else
         if [ -z "$KEYTABPATH" ]; then
-            exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Add? KEYTABPATH=/path/to/keytabs to startup file (e.g. ~/.bash_profile)" 1
+            exitmessage "-k: No keytab found: cannot access ${KEYTABPATH}/${KEYTABFILE}: no such file or directory. Try KEYTABPATH=/path/to/keytabs?" 1
         fi
     fi
 fi
@@ -285,8 +285,8 @@ if [ "$MODE" = "r" ]; then
                     for IRODS_FILE in "${HIT_LIST[@]}"; do
                         [ "$VERBOSE" -eq 1 ] && printf -- "[COMMAND] `which iget` -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}\n"
                         iget -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}
-                        [ "$?" -eq 0 ] && printf "INFO: Succesfully downloaded %s\n\n" "${IRODS_FILE}"
                         set "RET_CODE += $?"
+                        [ "$?" -eq 0 ] && printf "INFO: Succesfully downloaded %s\n\n" "${IRODS_FILE}"
                     done;;
                 s*)
                     printf -- "Downloading some of the files only press [Ss] to stop ...\n\n"
@@ -300,11 +300,11 @@ if [ "$MODE" = "r" ]; then
                                 mkdir -p $SDIR
                                 [ "$VERBOSE" -eq 1 ] && printf -- "\n[COMMAND] `which iget` -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}\n"
                                 iget -KPvf /seq/${RUN}/${IRODS_FILE} ${SDIR}/${IRODS_FILE}
-                                [ "$?" -eq "0" ] && printf "INFO: Succesfully downloaded %s\n\n" "${IRODS_FILE}"
                                 set "RET_CODE += $?"
+                                [ "$?" -eq "0" ] && printf "Succesfully downloaded %s\n\n" "${IRODS_FILE}"
                             fi
                             [[ $REPLY =~ n|N ]] && printf "\nSkipping %s\n\n" "$IRODS_FILE"
-                            [[ $REPLY =~ S|s ]] && printf -- "\nFine! No more. Bye!\n\n"
+                            [[ $REPLY =~ S|s ]] && printf -- "\nStopping downloads. Bye!\n\n"
                         done
                         [[ $REPLY =~ S|s ]] && break
                     done
@@ -321,16 +321,23 @@ elif [ "$MODE" = "i" ]; then
     LSBAM="$(ils /seq/${RUN}/${XAMID}.bam 2>&1)"
     NOBAM=$?
 
-    if [ "$NOBAM" -eq "4" ]; then
-        iformat=cram
-        ixformat=cram.crai
-    elif [ "$NOBAM" -eq "0" ]; then
-        iformat=bam
-        ixformat=bai
-    else
-        exitmessage "[ERROR] Error trying to get bam/cram file for ${XAMID}: $LSBAM" 1
-    fi
-
+    case "$NOBAM" in
+        0)
+            [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] BAM file FOUND: /seq/${RUN}/${XAMID}.bam\n"
+            iformat=bam
+            ixformat=bai;;
+        4)
+            [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] BAM file NOT FOUND: /seq/${RUN}/${XAMID}.bam\n" && printf -- "[INFO] Exit message: ${LSBAM}"
+            iformat=cram
+            ixformat=cram.crai;;
+        3)
+            [ "$VERBOSE" -eq 1 ] && printf -- "[ERROR] BAM file NOT ACCESSIBLE: /seq/${RUN}/${XAMID}.bam\n"
+            exitmessage "[ERROR] ${LSBAM}" 3;;
+        *)
+            [ "$VERBOSE" -eq 1 ] && printf -- "[ERROR] Error trying to get bam file for ${XAMID}\n"
+            exitmessage "[ERROR] Error trying to get bam file for [${XAMID}] with exit code ${NOBAM}: ${LSBAM}" $NOBAM;;
+    esac
+    
     RET_CODE=0
 
     case "$FORMAT" in
@@ -338,12 +345,12 @@ elif [ "$MODE" = "i" ]; then
             mkdir -p $SDIR
             if [ "$NOBAM" -eq "0" ]; then
                 [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam"
-                iget -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam
+                IGETCMD="$(iget -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam 2>&1)"
                 RET_CODE=$?
                 if [ "$FOPTION" = "i" ]; then
                     [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai"
-                    iget -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai
-                    [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for ${SDIR}/${XAMID}.bam"
+                    IGETIXCMD="$(iget -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai 2>&1)"
+                    [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for [${SDIR}/${XAMID}.bam]: " && echo "  $IGETIXCMD"
                 fi
             else
                 exitmessage "[ERROR] No bam format file present in iRODS for ${XAMID}: $LSBAM" 1
@@ -352,12 +359,12 @@ elif [ "$MODE" = "i" ]; then
         c)
             mkdir -p $SDIR
             [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.cram ${SDIR}/${XAMID}.cram"
-            iget -KPvf /seq/${RUN}/${XAMID}.cram ${SDIR}/${XAMID}.cram
+            IGETCMD="$(iget -KPvf /seq/${RUN}/${XAMID}.cram ${SDIR}/${XAMID}.cram 2>&1)"
             RET_CODE=$?
             if [ "$FOPTION" = "i" ]; then
                 [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}"
-                iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}
-                [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for ${SDIR}/${XAMID}.bam"
+                IGETIXCMD="$(iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat} 2>&1)"
+                [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for [${SDIR}/${XAMID}.bam]: " && echo "  $IGETIXCMD"
             fi
             ;;
         f)
@@ -371,18 +378,17 @@ elif [ "$MODE" = "i" ]; then
                     fi
                 fi
             fi
-            SDIR=./bamfq/$RUN
             FQ1=$SDIR/${XAMID}_1.fq.gz
             FQ2=$SDIR/${XAMID}_2.fq.gz
             mkdir -p $SDIR
-            [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` /seq/${RUN}/${XAMID}.$iformat - | `which bamsort` SO=queryname level=0 inputformat=$iformat $REFERENCEOPTION outputformat=bam index=0 tmpfile=./bamfq/tmp_${XAMID} | `which bamtofastq` inputformat=bam exclude=QCFAIL T=./bamfq/tmp_b2fq_${XAMID} gz=1 level=9 F=$FQ1 F2=$FQ2"
-            iget /seq/${RUN}/${XAMID}.$iformat - | bamsort SO=queryname level=0 inputformat=$iformat $REFERENCEOPTION outputformat=bam index=0 tmpfile=./bamfq/tmp_${XAMID} | bamtofastq inputformat=bam exclude=QCFAIL T=./bamfq/tmp_b2fq_${XAMID} gz=1 level=9 F=$FQ1 F2=$FQ2
+            [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` /seq/${RUN}/${XAMID}.${iformat} - | `which bamsort` SO=queryname level=0 inputformat=${iformat} $REFERENCEOPTION outputformat=bam index=0 tmpfile=./bamfq/tmp_${XAMID} | `which bamtofastq` inputformat=bam exclude=QCFAIL T=./bamfq/tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2}"
+            IGETCMD="$(iget /seq/${RUN}/${XAMID}.${iformat} - | bamsort SO=queryname level=0 inputformat=${iformat} ${REFERENCEOPTION} outputformat=bam index=0 tmpfile=./bamfq/tmp_${XAMID} | bamtofastq inputformat=bam exclude=QCFAIL T=./bamfq/tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2} 2>&1)"
             RET_CODE=$?
             ;;
         i)
             mkdir -p $SDIR
             [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}"
-            iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat}
+            IGETCMD="$(iget -KPvf /seq/${RUN}/${XAMID}.${ixformat} ${SDIR}/${XAMID}.${ixformat} 2>&1)"
             RET_CODE=$?
             ;;       
         t)
@@ -392,12 +398,12 @@ elif [ "$MODE" = "i" ]; then
             ret_code_dels=0
             ret_code_hits=0
             ret_code_unmp=0
-            [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which samtools1` view -bh -F 0x4 -o ${SDIR}/accepted_hits.bam irods:/seq/${RUN}/${XAMID}.$iformat"
-            ACCEPTEDHITSFILE="$(samtools1 view -bh -F 0x4 -o ${SDIR}/accepted_hits.bam irods:/seq/${RUN}/${XAMID}.$iformat 2>&1)"
+            [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which samtools1` view -bh -F 0x4 -o ${SDIR}/accepted_hits.bam irods:/seq/${RUN}/${XAMID}.${iformat}"
+            ACCEPTEDHITSFILE="$(samtools1 view -bh -F 0x4 -o ${SDIR}/accepted_hits.bam irods:/seq/${RUN}/${XAMID}.${iformat} 2>&1)"
             ret_code_hits=$?
             if [[ $FOPTION =~ a|b ]] ; then
-                [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which samtools1` view -bh -f 0x4 -o ${SDIR}/unmapped.bam irods:/seq/${RUN}/${XAMID}.$iformat"
-                UNMAPPEDFILE="$(samtools1 view -bh -f 0x4 -o ${SDIR}/unmapped.bam irods:/seq/${RUN}/${XAMID}.$iformat 2>&1)"
+                [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which samtools1` view -bh -f 0x4 -o ${SDIR}/unmapped.bam irods:/seq/${RUN}/${XAMID}.${iformat}"
+                UNMAPPEDFILE="$(samtools1 view -bh -f 0x4 -o ${SDIR}/unmapped.bam irods:/seq/${RUN}/${XAMID}.${iformat} 2>&1)"
                 ret_code_unmp=$?
             fi
             if [ "$FOPTION" = "a" ]; then
@@ -411,40 +417,42 @@ elif [ "$MODE" = "i" ]; then
             let "RET_CODE = ret_code_junc + ret_code_dels + ret_code_hits + ret_code_unmp"
             if [ "$RET_CODE" -ne "0" ]; then
                 [ "$VERBOSE" -eq 1 ] && echo "-f t: One or more files failed to download"
-                [ "$ret_code_junc" -ne "0" ] && echo "iget: $JUNCTIONSFILE"
-                [ "$ret_code_dels" -ne "0" ] && echo "iget: $DELETIONSFILE"
-                [ "$ret_code_hits" -ne "0" ] && echo "iget: $ACCEPTEDHITSFILE"
-                [ "$ret_code_unmp" -ne "0" ] && echo "iget: $UNMAPPEDFILE"
+                [ "$ret_code_junc" -ne "0" ] && echo "[WARNING] Failed to download junctions:" && echo "  $JUNCTIONSFILE"
+                [ "$ret_code_dels" -ne "0" ] && echo "[WARNING] Failed to download deletions:" && echo "  $DELETIONSFILE"
+                [ "$ret_code_hits" -ne "0" ] && echo "[WARNING] Failed to download accepted hits:" && echo "  $ACCEPTEDHITSFILE"
+                [ "$ret_code_unmp" -ne "0" ] && echo "[WARNING] Failed to download unmapped:" && echo "  $UNMAPPEDFILE"
             fi
             ;;
         B)
             mkdir -p $SDIR
             if [ "$NOBAM" -eq "4" ]; then
-                echo "[INFO] No bam format file present in iRODS for ${XAMID}: $LSBAM"
+                echo "[INFO] No bam format file present in iRODS for [${XAMID}]: $LSBAM"
                 echo "[INFO] Converting cram->bam ..."
                 [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -K /seq/${RUN}/${XAMID}.cram - | /software/solexa/bin/scramble -I cram -O bam - ${SDIR}/${XAMID}.bam"
-                iget -K /seq/${RUN}/${XAMID}.cram - | scramble -I cram -O bam - ${SDIR}/${XAMID}.bam
+                IGETCMD="$(iget -K /seq/${RUN}/${XAMID}.cram - | scramble -I cram -O bam - ${SDIR}/${XAMID}.bam 2>&1)"
                 RET_CODE=$?
                 if [ "$FOPTION" = "i" ]; then
                     [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which samtools1` index ${SDIR}/${XAMID}.bam"
                     echo "[INFO] Indexing cram or bam ..."
-                    samtools1 index ${SDIR}/${XAMID}.bam
-                    [ "$?" -ne "0" ] && echo "[WARNING] Failed to create index file for ${SDIR}/${XAMID}.bam"
+                    IGETIXCMD="$(samtools1 index ${SDIR}/${XAMID}.bam 2>&1)"
+                    [ "$?" -ne "0" ] && echo "[WARNING] Failed to create index file for ${SDIR}/${XAMID}.bam:" && echo "  $IGETIXCMD"
                 fi
             elif [ "$NOBAM" -eq "0" ]; then
                 [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam"
-                iget -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam
+                IGETCMD="$(iget -KPvf /seq/${RUN}/${XAMID}.bam ${SDIR}/${XAMID}.bam 2>&1)"
                 RET_CODE=$?
                 if [ "$FOPTION" = "i" ]; then
                     [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] `which iget` -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai"
-                    iget -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai
-                    [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for ${SDIR}/${XAMID}.bam"
+                    IGETCMD="$(iget -KPvf /seq/${RUN}/${XAMID}.bai ${SDIR}/${XAMID}.bai 2>&1)"
+                    [ "$?" -ne "0" ] && echo "[WARNING] Failed to download index file for ${SDIR}/${XAMID}.bam:" && echo "  $IGETIXCMD"
                 fi
             fi
             ;;            
     esac
 fi
 
-[ "$RET_CODE" -ne 0 ] && printf -- "\n[ERROR]: Something bad happened!\n"
-
-exit $RET_CODE
+if [ "$RET_CODE" -ne 0 ]; then
+    exitmessage "[ERROR] Error while trying to download [${XAMID}] Exited with exit code ${RET_CODE}:\n ${IGETCMD}" $RET_CODE
+else
+    exitmessage "[INFO] Done [${XAMID}]" 0
+fi
