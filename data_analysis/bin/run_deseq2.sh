@@ -253,7 +253,7 @@ echo "Command: /software/R-3.2.2/bin/Rscript ./bin/run_deseq2.R $arg"
 
 echo Working directory: $PWD
 
-/software/R-3.2.2/bin/Rscript ./bin/run_deseq2.R $arg
+/software/R-3.3.0/bin/Rscript ./bin/run_deseq2.R $arg
 
 ret_code=$?
 
