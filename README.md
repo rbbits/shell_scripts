@@ -10,7 +10,8 @@ Scripts used for the analysis of different types of data:
 
 * RNA-Seq
 * CHiP-Seq
-* Affymetrix
+* Agilent microarray (aCGH)
+* Affymetrix microarray
 
 ### p4_reprocessing
 
@@ -23,3 +24,9 @@ Scripts used in everyday situations and save you some time: be as lazy as possib
 ## Installation
 
 No special installation method, just copy the bin directory or its contents in a convenient location in your system.
+
+## Documentation
+
+### Data Analysis
+
+[Analysis of Affymetrix data](data_analysis/docs/Analysis_of_Affymetrix_data.rst)
