@@ -34,6 +34,10 @@ args <- as.list(as.character(argsDF$V2))
 
 names(args) <- argsDF$V1
 
+library("BiocParallel", quietly=TRUE, verbose=FALSE)
+
+library("tools", quietly=TRUE, verbose=FALSE)
+
 register(MulticoreParam(4))
 
 step <- as.numeric(args$step)
@@ -42,6 +46,14 @@ merged <- exists('merged', where=args)
 
 wd <- getwd()
 
+formatDate <- format(Sys.time(), format="%Y-%m-%d")
+
+if (exists('experimentid', where=args)) {
+    expId <- args$experimentid
+} else {
+    expId <- "NoExpId"
+}
+    
 
 ##-----------------------------------
 ## DESeq2 Functions
@@ -49,22 +61,16 @@ wd <- getwd()
 if (file.exists("bin/run_deseq2_functions.R")){
     source("bin/run_deseq2_functions.R")
 } else {
-    cat(paste("source: file bin/run_deseq2_funtions.R could not be found in current directory: ", cwd, sep=""))
+    cat(paste("source: file bin/run_deseq2_funtions.R could not be found in current directory: ", cwd, "\n", sep=""))
     quit(save = "no", status = 1, runLast = FALSE)
 }
 
 
-##-----------------------------------
-## load libraries
-##-----------------------------------
+library("DESeq2", quietly=TRUE, verbose=FALSE)
 
-library("DESeq2")
-library("GenomicAlignments")
-library("Rsamtools")
-library("BiocParallel")
-library("tools")
-library("biomaRt")
+library("Rsamtools", quietly=TRUE, verbose=FALSE)
 
+library("GenomicAlignments", quietly=TRUE, verbose=FALSE)
 
 # If we are running the script several times, we can save time by saving the main
 # SerializedExperiment object and pass the /path/to/rdsfile in list of arguments
@@ -73,64 +79,111 @@ if(!exists('sedata', where=args)) {
 
     if ( !step || step == 1) {
 
+        if (exists('reposdir', where=args)) {
+            reposdir <- args$reposdir
+        } else {
+            reposdir <- "/lustre/scratch110/srpipe/transcriptomes"
+        }
+
+        cat(paste("Using repository directory:", reposdir, "\n", sep=""))
+
+        if (exists('datadir', where=args)) {
+            datadir <- args$datadir
+        } else {
+            datadir <- "/nfs/gapi/users/rb11/data"
+        }
+
+        cat(paste("Using data directory: ", datadir, "\n", sep=""))
+        
         if(args$species == "mouse") {
             
-            transcriptsDB="transcriptsEns75GRCm38gtf.sqlite"
+            transcriptsSpecies="Mus musculus"
 
-            transcriptsGFF="/lustre/scratch110/srpipe/transcriptomes/Mus_musculus/ensembl_75_transcriptome/GRCm38/gtf/ensembl_75_transcriptome-GRCm38.gtf"
+            if (exists('genome', where=args)) {
+                genomeVersion <- args$genome
+            } else {
+                genomeVersion <- "GRCm38"
+            }
 
-            transcriptSpecies="Mus Musculus"
+            if (exists('transcriptome', where=args)) {
+                transcriptomeVersion <- args$transcriptome
+            } else {
+                transcriptomeVersion <- "ensembl_75_transcriptome"
+            }
 
-            chrominfo <- read.table("/nfs/gapi/users/rb11/data/chrominfo_Ens75GRCm38.txt", col.names=c("chrom", "length", "is_circular"))
-            
         } else if (args$species == "human") {
-            
-            transcriptsDB="transcriptsEns751000Genomes_hs37d5.sqlite"
 
-            transcriptsGFF="/lustre/scratch110/srpipe/transcriptomes/Homo_sapiens/ensembl_75_transcriptome/1000Genomes_hs37d5/gtf/ensembl_75_transcriptome-1000Genomes_hs37d5.gtf"
+            transcriptsSpecies <- "Homo sapiens"
 
-            transcriptSpecies="Homo Sapiens"
+            if (exists('genome', where=args)) {
+                genomeVersion <- args$genome
+            } else {
+                genomeVersion <- "1000Genomes_hs37d5"
+            }
 
-            chrominfo <- read.table("/nfs/gapi/users/rb11/data/chrominfo_Ens751000Genomes_hs37d5.txt", col.names=c("chrom", "length", "is_circular"))
+            if (exists('transcriptome', where=args)) {
+                transcriptomeVersion <- args$transcriptome
+            } else {
+                transcriptomeVersion <- "ensembl_75_transcriptome"
+            }
             
         }
         
-        library("GenomicFeatures")
+        library("GenomicFeatures", quietly=TRUE, verbose=FALSE)
         
+        transcriptsBasename <- paste(transcriptomeVersion, genomeVersion, sep="-")
+        
+        transcriptsDB <- paste(transcriptsBasename, "sqlite", sep=".")
+        
+        transcriptsGFF <- paste(transcriptsBasename, "gtf", sep=".")
+        
+        chromInfo <- paste(genomeVersion, "chrominfo", sep=".")
+        
+        gtfFile <- paste(reposdir, gsub(" ", "_", transcriptsSpecies), transcriptomeVersion, genomeVersion, "gtf", transcriptsGFF, sep="/")
+        
+        chrominfo <- read.table(paste(datadir, chromInfo, sep="/"), col.names=c("chrom", "length", "is_circular"))
+            
         # Read Gene Model from GTF. 
         if(file.exists(paste("resources/", transcriptsDB, sep=""))) {
-            
-            hse <- loadDb(paste("resources/", transcriptsDB, sep=""))
-            
+            txdb <- loadDb(paste("resources/", transcriptsDB, sep=""))
+        } else if(file.exists(paste(datadir, transcriptsDB, sep="/"))) {
+            txdb <- loadDb(paste(datadir, transcriptsDB, sep="/"))
         } else {
            
             # Read Gene Model from GTF
-            hse <- makeTxDbFromGFF(transcriptsGFF,
-                                   format="gtf",
-                                   exonRankAttributeName="exon_number",
-                                   chrominfo=chrominfo,
-                                   species=transcriptSpecies)
+            txdb <- makeTxDbFromGFF(gtfFile,
+                                    format="gtf",
+                                    chrominfo=chrominfo,
+                                    organism=transcriptsSpecies)
                                      
-            saveDb(hse, file=paste("/nfs/gapi/users/rb11/data/", transcriptsDB, sep=""))
+            if (file.access(datadir, mode = 2)) {
+                saveDb(txdb, file=paste(datadir, transcriptsDB, sep="/"))
+            } else {
+                saveDb(txdb, file=paste(".", "resources", transcriptsDB, sep="/"))
+            }
 
         }
     
         # List of exons grouped by gene
-        exonsByGene <- exonsBy(hse, by="gene")
+        exonsByGene <- exonsBy(txdb, by="gene")
     }
 
     if (!step) {  # NO STEPS
-        
+
         if (args$pooling == "allsamples") {
-            
-            # list of files. Specify BAMs location
-            fls <- list.files(args$idir, pattern="bam$", full=TRUE )
-        
+
+            # Read targets and select samples to process
+            samplesData <- read.table(args$targets, comment.char="", sep="\t", header=TRUE)
+
             # get correct run ids for colnames(se)
-            bamfilenames <- basename(list_files_with_exts(args$idir, "bam"))
+            bamfilenames <- paste(samplesData$RunId, "accepted_hits.bam", sep="_")
             
-            runids <- gsub("#", "_", gsub("_accepted_hits.bam", "", bamfilenames))
-        
+            # list of files using ids listed in targets
+            fls <- paste(args$idir, bamfilenames, sep="/")
+
+            # format runid names based on bamids
+            runids <- gsub("#", "_", samplesData$RunId)
+
             # Define fls list as BAM files
             bamLst <- BamFileList(fls, yieldSize=100000, asMates=TRUE)
         
@@ -147,7 +200,7 @@ if(!exists('sedata', where=args)) {
             dir.create(args$idir)
         
             # serialize object and save it
-            saveRDS(se, file = paste(args$idir, "/summarizedExperiment_nosteps_allsamples.Rds", sep=""))
+            saveRDS(se, file = paste(args$idir, "/", expId, "_", formatDate, "_summarizedExperiment_nosteps_allsamples.Rds", sep=""))
             
             runDESeq2(se, args$targets, args$contrasts, args$varofinterest, args$pooling, merged, args$species, args$odir)
 
@@ -204,7 +257,7 @@ if(!exists('sedata', where=args)) {
         # create input directory
         dir.create(file.path(wd, args$irds))
 
-        saveRDS(se, file = paste(wd, "/", args$irds, "/", bamFileName, ".Rds", sep="")) #serialize object
+        saveRDS(se, file = paste(args$irds, "/", bamFileName, ".Rds", sep="")) #serialize object
 
         # stop the script, run again with --step=2 to continue
         quit(save = "no", status = 0, runLast = TRUE)
@@ -249,10 +302,10 @@ if(!exists('sedata', where=args)) {
             se <- do.call(cbind, seList)
 
             # create input directory
-            dir.create(file.path(wd,args$irds))
+            dir.create(file.path(wd, args$irds))
 
-            #serialize object. Save for debugging reasons.
-            saveRDS(se, file = paste(wd, "/", args$irds, "/summarizedExperiment_step2_allsamples_", format(Sys.time(), format="%Y-%m-%d"), ".Rds", sep=""))
+            # serialize object
+            saveRDS(se, file = paste(args$irds, "/", expId, "_", formatDate, "_summarizedExperiment_step2_allsamples.Rds", sep=""))
 
             # run DESeq2
             runDESeq2(se, args$targets, args$contrasts, args$varofinterest, args$pooling, merged, args$species, args$odir)

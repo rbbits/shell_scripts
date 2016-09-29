@@ -20,7 +20,9 @@ runDESeq2 <- function(sumExp, targets, contrast, varofinterest, pooling, merged,
             ensGeneSymbol="mgi_symbol"
             
         }            
-            
+
+        library("biomaRt")
+    
         ensembl <- useMart("ENSEMBL_MART_ENSEMBL", dataset=ensDataset, host="www.ensembl.org")
             
         genemap <- getBM(attributes = c("ensembl_gene_id", "entrezgene", ensGeneSymbol),
@@ -40,7 +42,7 @@ runDESeq2 <- function(sumExp, targets, contrast, varofinterest, pooling, merged,
     
     # Print the topTable
     createTopTable <- function(presentDDS, contrast, variable, fileSuffix, topTableSpecies, oDir) {
-            
+
         presentContrast <- unlist(contrast)
         
         # put the "control" or "untreated" level as the first element, so that the
