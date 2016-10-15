@@ -117,7 +117,6 @@ eval $(parse_yaml $YAML_FILE "YML_")
 DRYRUN=${DRYRUN-0}
 RET_CODE=0
 WD=$PWD
-NUM_TARGETS=`grep -c ^[0-9] $YML_targets`
 ANALYSIS_DATE=`date +%Y-%m-%d`
 ANALYSIS_USER=`whoami`
 EXPERIMENT_ID=$YML_experimentId
@@ -143,7 +142,7 @@ if [[ "$STEP" -eq "0" &&  -n "$RDS_FILE" ]] || [[ "$STEP" -eq "2" &&  -n "$RDS_F
         RDS_FILE_ARG="--sedata=${RDS_FILE}"
     fi
 
-elif [ "$STEP" -eq "0" ] || [ "$STEP" -eq "1"]; then
+elif [ "$STEP" -eq "0" ] || [ "$STEP" -eq "1" ]; then
             
     # if the samples have been merged they have been pre-processed and made ready for the R script
     # otherwise we need to extract the accepted hits and make them available for the R script
@@ -158,7 +157,7 @@ elif [ "$STEP" -eq "0" ] || [ "$STEP" -eq "1"]; then
 		#!/bin/bash
 		. /software/npg/etc/profile.npg
 		IDIR=$1; ODIR=$2; TARGETS=$3;
-		let "LINE=$LSB_JOBINDEX+1"
+		let "LINE=$LSB_JOBINDEX+1" ##header offset
 		RUN=`head -n ${LINE} ${TARGETS} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $2}'`
 		POS=`head -n ${LINE} ${TARGETS} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $3}'`
 		TAG=`head -n ${LINE} ${TARGETS} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $4}'`
@@ -168,15 +167,23 @@ elif [ "$STEP" -eq "0" ] || [ "$STEP" -eq "1"]; then
 		RET_CODE=0
 		mkdir -pv $ODIR
 		if [ ! -e "${OUTPUT_BAM}.bai" ]; then
-		   CMD="samtools1 view -bh -F 0x4 -o $OUTPUT_BAM $INPUT_BAM && samtools1 index $OUTPUT_BAM"
-		   printf "[INFO] Running command:\n[INFO] %s\n" "${CMD}"
+		   CMD="samtools1 view -bh -F 0x4 -o $OUTPUT_BAM $INPUT_BAM"
+		   printf "[INFO] Running view command:\n[INFO] %s\n" "${CMD}"
 		   SAMTOOLSCMD=$($CMD)
 		   RET_CODE=$?
-		   [ "$RET_CODE" -ne "0" ] && printf -- "[INFO] Samtools for RunId [${BAMID}] failed!\n" >&2
+		   if [ "$RET_CODE" -eq "0" ]; then
+		       CMD="samtools1 index $OUTPUT_BAM"
+		       printf "[INFO] Running index command:\n[INFO] %s\n" "${CMD}"
+		       SAMTOOLSCMD=$($CMD)
+		       RET_CODE=$?
+		       [ "$RET_CODE" -ne "0" ] && printf -- "[ERROR] Samtools Index for RunId [${BAMID}] failed!\n" >&2
+		   else       
+		       printf -- "[ERROR] Samtools View for RunId [${BAMID}] failed!\n" >&2
+		   fi
 		else
 		   printf -- "[INFO] Accepted hits for [$BAMID] have been extracted already\n"
 		fi
-		[ "$RET_CODE" -eq "0" ] && printf -- "[INFO] Done\n" || printf -- "[INFO] Exited\n"
+		[ "$RET_CODE" -eq "0" ] && printf -- "[INFO] Done\n" || printf -- "[ERROR] Exited\n" >&2
 		exit $RET_CODE
 		EOF
         ) > $OUT_SH_FILE
@@ -185,6 +192,7 @@ elif [ "$STEP" -eq "0" ] || [ "$STEP" -eq "1"]; then
                 
             chmod 755 $OUT_SH_FILE
             printf "[${VERBOSELBL}] Auxiliary script file %s was created successfully\n" "${OUT_SH_FILE}"
+            NUM_TARGETS=`grep -c ^[0-9] $YML_targets`
             JOB_ARRAY_LENGTH=${ARRAY_IDXS:-"1-${NUM_TARGETS}"}
             BSUBCMD="bsub -J ${EXPERIMENT_ID}_${ANALYSIS_USER}_${ANALYSIS_DATE}_XAHITS[${JOB_ARRAY_LENGTH}] "
             BSUBCMD+="-oo log/extract_accepted_hits.%I.o -eo log/extract_accepted_hits.%I.e "
@@ -225,13 +233,11 @@ elif [ "$STEP" -eq "0" ] || [ "$STEP" -eq "1"]; then
             
         # Read ech line in the targets file provided by the yaml file
         while read line; do
-                
             # read run info from targets
             RUN=`echo "$line" | awk -F'\t' '{print $2}'`
             POS=`echo "$line" | awk -F'\t' '{print $3}'`
             TAG=`echo "$line" | awk -F'\t' '{print $4}'`
             SMP=`echo "$line" | awk -F'\t' '{print $6}'`
-            
             # deal with non-multiplexed lanes: the combination of run_pos#tag
             # is used as bam identifier for both merged and not merged bams            
             [ -n "$TAG" ] && BAMID="${RUN}_${POS}#${TAG}" || BAMID="${RUN}_${POS}"
@@ -251,10 +257,8 @@ elif [ "$STEP" -eq "0" ] || [ "$STEP" -eq "1"]; then
                 TARGET_BAM="accepted_hits.bam"
                 INPUT_BAM="${BAMID}_accepted_hits.bam"
             fi
-            
             [ "$DRYRUN" -eq "0" ] && ln -s -f "../../${BAMDIR}/${TARGET_BAM} ${INPUT_BAM}"
             printf "[${VERBOSELBL}] Created soft link: %s\n" "${INPUT_BAM}"
-                
         done <$YML_targets
             
         [ "$DRYRUN" -eq "0" ] && . /nfs/users/nfs_r/rb11/local/bin/chdir "${WD}"
@@ -262,10 +266,10 @@ elif [ "$STEP" -eq "0" ] || [ "$STEP" -eq "1"]; then
         BAM_JOBID=""
         
     else
-            
+        
         echo "Process STAR or others here ... bye."
         exit 1
-            
+        
     fi # (bam source)
 
     # pass different arguments to the R script depending on the step
@@ -330,8 +334,8 @@ fi
 RSCRIPT_ARGS+=" ${SE_DATA_ARG}"
 
 BSUBCMD="bsub -J ${EXPERIMENT_ID}_${ANALYSIS_USER}_${ANALYSIS_DATE}_DESEQ2 "
-BSUBCMD+="-oo log/deseq2.o -eo log/deseq2.e "
-BSUBCMD+="-R select[mem>20000] -R rusage[mem=20000] -M 20000 "
+BSUBCMD+="-oo log/deseq2_${ANALYSIS_DATE}.o -eo log/deseq2_${ANALYSIS_DATE}.e "
+BSUBCMD+="-R select[mem>22000] -R rusage[mem=22000] -M 22000 "
 BSUBCMD+="-n 4 -R span[hosts=1] "
 
 [[ -n $BAM_JOBID ]] && BSUBCMD+="-w done(${BAM_JOBID}) "
