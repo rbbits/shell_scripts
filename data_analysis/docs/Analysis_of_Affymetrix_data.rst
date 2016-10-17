@@ -58,9 +58,9 @@ The script requires the following elements:
 
 -  A **targets file**, usually stired in a directory called ``resources`` but this is not a requirement as long as the correct path (full or relative is passed to the ``--targets=`` argument.
 
--  A ***contrast***. The contrast is a representation of the differential expression analysis that the script is going to perform in the form of a simple subtraction ``A-B`` where A is usually the group of mutant samples and B the wild type.
+-  A **contrast**. The contrast is a representation of the differential expression analysis that the script is going to perform in the form of a simple subtraction ``A-B`` where A is usually the group of mutant samples and B the wild type.
 
--  Directory structure of the working directory: It is recommended that the analysis is performed inside a working directory with a number of predefined directories:
+-  Directory structure of the working directory: It is recommended that the analysis is performed inside a working directory with a number of predefined directories, but others can be used as long as these are appropriately specified in the arguments.
 
    -  **input**: contains the CEL files
    -  **resources**: contains the targets file
@@ -70,35 +70,31 @@ The script requires the following elements:
 The R script options
 ^^^^^^^^^^^^^^^^^^^^
 
-The script makes an assumption of the required files are stored in those
-directories, **BUT** different parameter values can be passed to it via
-the following command line arguments:
+The script makes an assumption of the required files are stored in those directories, **BUT** different parameter values can be passed to it via the following command line arguments:
 
 -  ``--input_dir=/path/to/input/files/``
 -  ``--output_dir=/path/where/results/are/saved/``
 
-The paths can be absolute or relative e.g.:
-``--input_dir=./a/dir/within/``
+The paths can be absolute or relative e.g.: ``--input_dir=./a/dir/within/``
+
+R Libraries
+^^^^^^^^^^^
+
+Currently the script uses R version 3.2.2 and the path to the necessary libraries are hard-coded. If you wish to use a different version or a different location for your libraries simply change the code to reflect this. Remember the version of R used to run Rscript should match the one that was used to compile and install the libraries.
 
 Analysis
 ~~~~~~~~
 
 To perform a differential expression analysis using the targets file and a specific contrast based on the group of interest contained in it, in this case column ``Sample`` use the R script provided with the correct arguments:
 
- ``/software/R-3.2.2/bin/Rscript ./bin/olly_dovey_200AMLsAffy.R --targets_file=./resources/Targets_1.2.txt --contrast=setbphi_2_Runx1mut-setbp1hi_2_RunxWT --group_column=Sample --output_dir=./output --input_dir=./input``
+ ``/software/R-3.2.2/bin/Rscript run_affymetrix.R --targets_file=./resources/Targets_1.2.txt --contrast=setbphi_2_Runx1mut-setbp1hi_2_RunxWT --group_column=Sample --output_dir=./output --input_dir=./input``
 
 Analysis using LSF
 ^^^^^^^^^^^^^^^^^^
 
-For bigger analyses - e.g. involving more than a dozen of samples -
-memory and other resources may become an issue and prevent the analysis
-to be completed. In those cases it's advisable to use the Platform Load
-Sharing Facility (LSF) which will schedule the job and manage the
-resources accordingly based on the user's requests.
+For bigger analyses - e.g. involving more than a dozen of samples - memory and other resources may become an issue and prevent the analysis to be completed. In those cases it's advisable to use the Platform Load Sharing Facility (LSF) which will schedule the job and manage the resources accordingly based on the user's requests.
 
-To run the ``Rscript`` command using LSF wrap it around with a ``bsub``
-command with the appropriate request for resources, enclosing it within
-single or double quotes:
+To run the ``Rscript`` command using LSF wrap it around with a ``bsub`` command with the appropriate request for resources, enclosing it within single or double quotes:
 
 **Run in a single line**: delete backslashes (\\):
 
@@ -138,4 +134,4 @@ Data has been sorted by significance (column adj.P.Val). The lower the adj.P.Val
 Quality Control
 ~~~~~~~~~~~~~~~
 
-No QC performed as the files are of external origin.
+No QC performed as the files are of external origin but a snipet of the code to do this can be found commented in the script.
