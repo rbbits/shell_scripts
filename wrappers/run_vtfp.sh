@@ -60,8 +60,6 @@ while getopts ":c:i:f:hm:M:r:w:x:" OPTION; do
             # [2017-11-25] not supported yet
             OUTPUTDIR=$OPTARG
             [ -d $OUTPUTDIR ] || printf -- "[WARNING] Cannot access ${INDIR}: No such directory and it will be created\n";;
-        f)
-            FORMAT=$OPTARG;;
         M)
             METHOD=$OPTARG
             METHODREGEX="^bam2cram|star|tophat2|bwa\_aln|bwa\_mem|hs\_split|y\_split|salmon$"
