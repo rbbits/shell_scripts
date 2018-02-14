@@ -222,13 +222,14 @@ while read line; do
                 STAR_ARGS="-keys annotation_val -vals ${REPOSDIR}/transcriptomes/${TRANSCRIPTANNO} "
                 STAR_ARGS+="-keys sjdb_overhang_val -vals 74 "
                 STAR_ARGS+="-keys star_executable -vals star "
-                #STAR_ARGS+="-keys reference_transcriptome_fasta -vals ${REPOSDIR}/transcriptomes/${REFTRANSCRIPTFASTA} "
-                #STAR_ARGS+="-keys scramble_reference_fasta -vals ${REPOSDIR}/references/${REFNAMEFASTA} "
                 if [[ ! $ALIGNREFGENOME =~ .*/star$ ]]; then
                     ALIGNREFGENOME="$(dirname $ALIGNREFGENOME)"
                     ALIGNREFGENOME="$(dirname $ALIGNREFGENOME)"
                     ALIGNREFGENOME+="/star"
                 fi
+            elif [ "$METHOD" = "salmon" ]; then #just 'salmon'
+                SALMON_ARGS+="-keys annotation_val "
+                [[ ! $TRANSCRIPTANNO = /* ]] && SALMON_ARGS+="-vals ${REPOSDIR}/transcriptomes/${TRANSCRIPTANNO} " || SALMON_ARGS+="-vals ${TRANSCRIPTANNO} "
             fi
             if [[ ! $TRANSCRIPTOME = NoTranscriptome && ! $TRANSCRIPTANNO = NoTranscriptome ]]; then
                 SALMON_ARGS="-keys salmon_transcriptome_val "
@@ -237,8 +238,6 @@ while read line; do
             else
                 exitmessage "[ERROR] NoTranscriptome for Salmon quantification" 1
             fi
-            SALMON_ARGS+="-keys annotation_val "
-            [[ ! $TRANSCRIPTANNO = /* ]] && SALMON_ARGS+="-vals ${REPOSDIR}/transcriptomes/${TRANSCRIPTANNO} " || SALMON_ARGS+="-vals ${TRANSCRIPTANNO} "
             SALMON_ARGS+="-keys quant_method -vals salmon "
             ;;
         hs_split)
