@@ -210,21 +210,21 @@ IMETA_EXE=`which imeta`
 IGET_BIN=`which iget`
 [ "$?" -ne "0" ] && exitmessage "[ERROR] iget: command not found" 1
 BAMSORT_BIN=`which bamsort`
-[ "$?" -ne "0" ] && exitmessage "[ERROR] bamsort: command not found" 1
+[ "$?" -ne "0" ] && printf -- "[WARNING] bamsort: command not found\n"
 BAM2FQ_BIN=`which bamtofastq`
-[ "$?" -ne "0" ] && exitmessage "[ERROR] bamtofastq: command not found" 1
+[ "$?" -ne "0" ] && printf -- "[WARNING] bamtofastq: command not found\n"
 SAMTOOLS_BIN=`which samtools`
-[ "$?" -ne "0" ] && exitmessage "[ERROR] samtools: command not found" 1
+[ "$?" -ne "0" ] && printf -- "[WARNING] samtools: command not found\n"
 SCRAMBLE_BIN=`which scramble`
-[ "$?" -ne "0" ] && exitmessage "[ERROR] scramble: command not found" 1
+[ "$?" -ne "0" ] && printf -- "[WARNING] scramble: command not found\n"
 BATON_BIN=`which baton`
-[ "$?" -ne "0" ] && exitmessage "[ERROR] baton: command not found" 1
+[ "$?" -ne "0" ] && printf -- "[WARNING] baton: command not found\n"
 BATON_METAQUERY_BIN=`which baton-metaquery`
-[ "$?" -ne "0" ] && exitmessage "[ERROR] baton-metaquery: command not found" 1
+[ "$?" -ne "0" ] && printf -- "[WARNING] baton-metaquery: command not found\n"
 BAMMERGE_BIN=`which bammerge`
-[ "$?" -ne "0" ] && exitmessage "[ERROR] bammerge: command not found" 1
+[ "$?" -ne "0" ] && printf -- "[WARNING] bammerge: command not found\n"
 JQ_BIN=`which jq`
-[ "$?" -ne "0" ] && exitmessage "[ERROR] jq: command not found" 1
+[ "$?" -ne "0" ] && printf -- "[WARNING] jq: command not found\n"
 
 
 USER=`whoami`
@@ -578,7 +578,7 @@ case "$INPUTMODE" in
                 if [[ ${COLL_LIST[$IDX]} =~ ([[:digit:]]+) ]]; then
                     RUN="${BASH_REMATCH[1]}";
                 fi
-                CMD="${IGET_BIN} -KPvf ${IRODS_FILE} ${SDIR}${RUN}/${HITS_LIST[$IDX]}"
+                CMD="${IGET_BIN} -KPvf ${IRODS_FILE} ${SDIR}/${RUN}/${HITS_LIST[$IDX]}"
                 [ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" "$CMD"
                 ret_code=0
                 [ $DRYRUN -eq 0 ] && IGETCMD="$($CMD 2>&1)" && ret_code=$?
