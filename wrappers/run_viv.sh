@@ -10,8 +10,9 @@
 usage(){
     cat <<-EOF
 	This script runs VIV using the information provided by a targets file.
-	[M]ethods available:  bwa_mem | bwa_aln | tophat2 | star | bam2cram | y_split | hs_split | salmon
-		
+	[M]ethods available:  bwa_mem | bwa_aln | tophat2 | star | bam2cram | y_split | hs_split | salmon | bam2salmon
+	If -m runfolder is used, paths for output and staging directories are taken from the json file and it's assumed they exist.
+	
 	Usage: 
 
 	$0 -M <METHOD> [options] targets_file.txt
@@ -20,7 +21,9 @@ usage(){
 	   -c <number>      Do not use WTSI composite id (run_position[#tag]), use insted the
 	                    contents of this column in the targets file (must be unique).
 	   -h               Show usage message.
+	   -m <method hint> Shortcut for specific directory structure: <runfolder | reanalysis>. Default: reanalysis.
 	   -n <number>      Line number in targets to be processed
+	   -t <number>      If -m runfolder is used, numeric part of tmp_XXXXX folder
 	   -w <directory>   Absolute path to working directory. Default: $PWD
 	   -x <extra args>  Extra arguments passed to viv in a quoted string
 	EOF
@@ -40,7 +43,7 @@ exitmessage(){
     exit $EXITCODE
 }
 
-while getopts ":c:hM:n:w:x:" OPTION; do
+while getopts ":c:hM:m:n:t:w:x:" OPTION; do
     case $OPTION in
         c)
             TARGETSCOLUMN=$OPTARG
@@ -49,12 +52,19 @@ while getopts ":c:hM:n:w:x:" OPTION; do
             usage; exit 1;;
         M)
             METHOD=$OPTARG
-            METHODREGEX="^bam2cram|tophat2|star|bwa\_aln|bwa\_mem|hs\_split|y\_split|salmon$"
+            METHODREGEX="^bam2cram|tophat2|star|bwa\_aln|bwa\_mem|hs\_split|y\_split|bam2salmon|salmon$"
             [ -z "$METHOD" ] && exitmessage "[ERROR] -M: a method is required: try '$0 -h' for more information" 1
             [ -n "$METHOD" ] && [[ ! $METHOD =~ $METHODREGEX ]] && exitmessage "[ERROR] -M: invalid method $METHOD: try '$0 -h' for more information" 1;;
+        m)
+            METHODHINT=$OPTARG
+            METHODHINTREGEX="^runfolder|reanalysis$"
+            [[ ! $METHODHINT =~ $METHODHINTREGEX ]] && exitmessage "[ERROR] -m: invalid method hint $METHODHINT: try '$0 -h' for more information" 1;;
         n)
             RECNO=$OPTARG
             [[ ! $RECNO =~ ^[0-9]+$ ]] && exitmessage "[ERROR] -n: not a digit: ${RECNO}" 1;;
+        t)
+            TMPDIRNUM=$OPTARG
+            [[ ! $TMPDIRNUM =~ ^[0-9]+$ ]] && exitmessage "[ERROR] -n: not a digit: ${TMPDIRNUM}" 1;;
         w)
             CWD=$OPTARG
             [[ ! -d $CWD ]] && exitmessage "[ERROR] -w: Cannot access ${CWD}: no such directory" 2
@@ -88,8 +98,9 @@ else
     fi
 fi
 
-VIVEXECUTABLE=$BINARY
-WORKINGDIR=${CWD:-"$PWD"}
+VIVEXECUTABLE="$BINARY"
+WORKINGDIR="${CWD:-"$PWD"}"
+METHODHINT="${METHODHINT:-"reanalysis"}"
 
 printf -- "[INFO] Working directory: ${WORKINGDIR}\n"
 
@@ -118,23 +129,35 @@ fi
         
 LOGFILE="${BAMID}_viv_${METHOD}.log"
 JSONFILE="${BAMID}_${METHOD}.json"
-        
-OUTDATADIR="${WORKINGDIR}/output/${METHOD}/${RUN}/${BAMID}"
-STAGINGDIR="${WORKINGDIR}/staging/${METHOD}/${RUN}/${BAMID}"
+
+if [ "$METHODHINT" = "reanalysis" ]; then
+    OUTDATADIR="${WORKINGDIR}/output/${METHOD}/${RUN}/${BAMID}"
+    STAGINGDIR="${WORKINGDIR}/staging/${METHOD}/${RUN}/${BAMID}"
+    # create staging and output (including the qc dir) directories
+    mkdir -pv "${STAGINGDIR}/tmpdir"
+    mkdir -pv "${OUTDATADIR}/qc"
+    IJSONDIR="${WORKINGDIR}/json"
+elif [ "$METHODHINT" = "runfolder" ]; then
+    OUTDATADIR="${WORKINGDIR}/no_cal/archive/lane${POSITION}"
+    if [ -z "$TMPDIRNUM" ]; then
+        exitmessage "[ERROR] -t: a numeric value is required for -t when -m runfolder is being used (numbers in tmp_XXXXXX directory)"
+    else
+        STAGINGDIR="${WORKINGDIR}/no_cal/archive/tmp_${TMPDIRNUM}/${BAMID}"
+        IJSONDIR="${WORKINGDIR}/no_cal/archive/tmp_${TMPDIRNUM}/${BAMID}"
+    fi
+fi
 
 printf "[INFO] Output directory: %s\n" "${OUTDATADIR}"
 
-# create staging and output (including the qc dir) directories
-mkdir -pv "${STAGINGDIR}/tmpdir"
-mkdir -pv "${OUTDATADIR}/qc"
-
-printf "[INFO] Changing to staging directory: %s\n" "${STAGINGDIR}"
+printf -- "[INFO] Changing to staging directory\n"
 
 . /nfs/users/nfs_r/rb11/local/bin/chdir $STAGINGDIR
 
+printf "[INFO] Staging directory: %s\n" "${PWD}"
+
 [ ! -z "$EXTRAOPTS" ] && printf -- "[INFO] Using extra arguments [ ${EXTRAOPTS} ]\n"
 
-VIVCMD="${VIVEXECUTABLE} -s -v 3 -x -o ${LOGFILE} ${EXTRAOPTS} ${WORKINGDIR}/json/${JSONFILE}"
+VIVCMD="${VIVEXECUTABLE} -s -v 3 -x -o ${LOGFILE} ${EXTRAOPTS} ${IJSONDIR}/${JSONFILE}"
 
 printf -- "[INFO] Running VIV command:\n"
 printf -- "[COMMAND] ${VIVCMD}\n"
