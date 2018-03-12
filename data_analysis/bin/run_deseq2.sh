@@ -189,12 +189,16 @@ elif [ $2 = "step1" ] ; then
             inputBam=$irodsDir/$run/${bamid}.cram
             outputBam=$inputDir/${bamid}_accepted_hits.bam         
             if [ ! -e "${outputBam}.bai" ]; then
+
+                printf -- "[INFO] Extracting accepted hits from ${inputBam} ... "
                 samtools1 view -bh -F 0x4 -o $outputBam $inputBam && samtools1 index $outputBam
                 ret_code=$?
                 if [ $ret_code -ne 0 ]; then
                     echo "Samtools failed!"
                     exit $ret_code
                 fi
+                echo "Done."
+                
             fi
            
         elif [ $bamsource = "tophat" ]; then
