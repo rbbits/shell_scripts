@@ -192,6 +192,8 @@ DRYRUN=${DRYRUN-0}
 VERBOSE=${VERBOSE-0}
 DEFAULTDIR="."
 OUTPUTFORMAT=${OUTPUTFORMAT-c}
+XAM_FILE_EXT="cram"
+XAM_IXFILE_EXT="cram.crai"
 REPOSDIR=${REPOSITORY-"/lustre/scratch117/core/sciops_repository"}
 
 
@@ -358,21 +360,28 @@ case "$INPUTMODE" in
         NOBAM=$?
         case $NOBAM in
             0)
-                [[ $OUTPUTFORMAT =~ [bB] ]] && [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] BAM file FOUND: /seq/${RUN}/${XAMID}.bam\n"
-                [ "$OUTPUTFORMAT" = "B" ] && OUTPUTFORMAT="b"
-                XAM_FILE_EXT="bam"
-                XAM_IXFILE_EXT="bai";;
+                [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] BAM file FOUND: /seq/${RUN}/${XAMID}.bam\n"
+                if [[ "$OUTPUTFORMAT" =~ [bB] ]]; then
+                    OUTPUTFORMAT="b"
+                    XAM_FILE_EXT="bam"
+                    XAM_IXFILE_EXT="bai"
+                fi;;
             4)
-                [[ $OUTPUTFORMAT =~ [bB] ]] && [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] BAM file NOT FOUND: /seq/${RUN}/${XAMID}.bam\n" && printf -- "[INFO] Exit message: ${LSBAM}\n"
-                XAM_FILE_EXT="cram"
-                XAM_IXFILE_EXT="cram.crai";;
+                [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] BAM file NOT FOUND: /seq/${RUN}/${XAMID}.bam\n"
+                if [ "$OUTPUTFORMAT" = "B" ]; then
+                    XAM_FILE_EXT="bam"
+                    XAM_IXFILE_EXT="bai"
+                elif [ "$OUTPUTFORMAT" = "b" ]; then
+                    exitmessage "[ERROR] ${LSBAM}" $NOBAM
+                fi;;
             3)
-                [[ $OUTPUTFORMAT =~ [bB] ]] && [ "$VERBOSE" -eq 1 ] && printf -- "[ERROR] BAM file NOT ACCESSIBLE: /seq/${RUN}/${XAMID}.bam\n"
+                [ "$VERBOSE" -eq 1 ] && printf -- "[ERROR] BAM file NOT ACCESSIBLE: /seq/${RUN}/${XAMID}.bam\n"
                 exitmessage "[ERROR] ${LSBAM}" $NOBAM;;
             *)
-                [[ $OUTPUTFORMAT =~ [bB] ]] && [ "$VERBOSE" -eq 1 ] && printf -- "[ERROR] Error trying to get bam file for ${XAMID}\n"
+                [ "$VERBOSE" -eq 1 ] && printf -- "[ERROR] Error trying to get bam file for ${XAMID}\n"
                 exitmessage "[ERROR] Error trying to get bam file for [${XAMID}] with exit code ${NOBAM}: ${LSBAM}" $NOBAM;;
         esac
+
 
         RET_CODE=0
         case "$OUTPUTFORMAT" in
@@ -392,8 +401,7 @@ case "$INPUTMODE" in
                 fi
                 ;;
             B)
-                echo "[INFO] No bam format file present in iRODS for [${XAMID}]: $LSBAM"
-                echo "[INFO] Converting cram->bam ..."
+                [ "$VERBOSE" -eq 1 ] && echo "[INFO] Converting cram->bam ..."
                 CMD="${SAMTOOLS_BIN} view -bh -o ${SDIR}/${XAMID}.bam irods:/seq/${RUN}/${XAMID}.cram"
                 [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] $CMD"
                 [ $DRYRUN -eq 0 ] && CRAM2BAMCMD="$($CMD 2>&1)" && RET_CODE=$?
