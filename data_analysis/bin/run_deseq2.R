@@ -82,7 +82,7 @@ if(!exists('sedata', where=args)) {
         if (exists('reposdir', where=args)) {
             reposdir <- args$reposdir
         } else {
-            reposdir <- "/lustre/scratch110/srpipe/transcriptomes"
+            reposdir <- "/lustre/scratch117/core/sciops_repository/transcriptomes"
         }
 
         cat(paste("Using repository directory:", reposdir, "\n", sep=""))
