@@ -20,7 +20,7 @@ usage(){
 	                    contents of this column in the targets file (must be unique).
 	   -f <format>      Input file format: cram | bam. Default: auto-detect.
 	   -h               Show usage message.
-	   -i <directory>   Input directory. Default: ./irods/<run>/.
+	   -i <directory>   Input directory. Default: ./input/.
 	   -j <directory>   Output direcory for json file. Default: ./json/.
 	   -m <method hint> Shortcut for specific directory structure: <runfolder | reanalysis>.
 	   -n <number>      If -m runfolder is used, numeric part of tmp_XXXXX folder
@@ -354,7 +354,7 @@ while read line; do
     let COUNTTOTAL+=1
     COUNTBAMID+=("$BAMID")
  
-    if [ "$RET_CODE" -eq 0 ]; then
+    if [ "$RET_CODE" -eq 0 ] && [ -z "$VTFP" ]; then
         let COUNTOK+=1
     else
         printf -- "[INFO] VTFP command for [ ${BAMID} ] exited with exit code ${RET_CODE}\n"
