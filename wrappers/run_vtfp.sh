@@ -177,6 +177,12 @@ while read line; do
             SBAMDIR="no_cal/archive/tmp_${TMPDIRNUM}/${BAMID}"
             JDIR="no_cal/archive/tmp_${TMPDIRNUM}/${BAMID}"
         fi
+        OUTJSONDIR="${WORKINGDIR}/${JDIR}"
+        [ -d "$OUTJSONDIR" ] || exitmessage "[ERROR] Cannot access ${OUTJSONDIR}: No such directory" 2
+        OUTDATADIR="${WORKINGDIR}/${OBAMDIR}"
+        [ -d "$OUTDATADIR" ] || exitmessage "[ERROR] Cannot access ${OUTDATADIR}: No such directory" 2
+        OUTSTAGINGDIR="${WORKINGDIR}/${SBAMDIR}"
+        [ -d $OUTSTAGINGDIR ] || exitmessage "[ERROR] Cannot access ${OUTSTAGINGDIR}: No such directory" 2
     else
         IBAMDIR="${INPUTDIR:-"input/$RUN"}"
         OBAMDIR="${OUTPUTDIR:-"output/$METHOD/$RUN/$BAMID"}"
@@ -185,24 +191,20 @@ while read line; do
     fi
 
     OUTJSONDIR="${WORKINGDIR}/${JDIR}"
-    [ -d "$OUTJSONDIR" ] || exitmessage "[ERROR] Cannot access ${OUTJSONDIR}: No such directory" 2
+    [ ! -d "$OUTJSONDIR" ] && exitmessage "[ERROR] Cannot access ${OUTJSONDIR}: No such directory" 2
     OUTDATADIR="${WORKINGDIR}/${OBAMDIR}"
-    [ -d "$OUTDATADIR" ] || exitmessage "[ERROR] Cannot access ${OUTDATADIR}: No such directory" 2
+    [ ! -d "$OUTDATADIR" ] && printf -- "[WARNING] Cannot access ${OUTDATADIR}: No such directory\n" 2
     INDATADIR="${WORKINGDIR}/${IBAMDIR}"
-    [ -d $INDATADIR ] || exitmessage "[ERROR] Cannot access ${INDATADIR}: No such directory" 2
+    [ ! -d "$INDATADIR" ] && exitmessage "[ERROR] Cannot access ${INDATADIR}: No such directory" 2
     OUTSTAGINGDIR="${WORKINGDIR}/${SBAMDIR}"
-    [ -d $OUTSTAGINGDIR ] || exitmessage "[ERROR] Cannot access ${OUTSTAGINGDIR}: No such directory" 2
+    [ ! -d "$OUTSTAGINGDIR" ] && printf -- "[WARNING] Cannot access ${OUTSTAGINGDIR}: No such directory\n" 2
     
     SRCINPUT="${INDATADIR}/${BAMID}"   #extension-less input file name
     REPOSDIR="${REPOSITORY-"/lustre/scratch117/core/sciops_repository"}"
     PHIXDICTNAME="PhiX/default/all/picard/phix_unsnipped_short_no_N.fa.dict"
     PHIXREFNAME="PhiX/Sanger-SNPs/all/fasta/phix_unsnipped_short_no_N.fa"
     ALIGNMENTFILTERJAR="/software/solexa/pkg/illumina2bam/1.19/AlignmentFilter.jar"
-
     ALIGNMENTMETHOD=$METHOD
-    SALMON_TRANSCRIPTOME="$(dirname $TRANSCRIPTOME)"
-    SALMON_TRANSCRIPTOME="$(dirname $SALMON_TRANSCRIPTOME)"
-    SALMON_TRANSCRIPTOME+="/salmon"
 
     case $METHOD in
         *salmon|star|tophat2)
@@ -231,6 +233,9 @@ while read line; do
                 SALMON_ARGS+="-keys annotation_val "
                 [[ ! $TRANSCRIPTANNO = /* ]] && SALMON_ARGS+="-vals ${REPOSDIR}/transcriptomes/${TRANSCRIPTANNO} " || SALMON_ARGS+="-vals ${TRANSCRIPTANNO} "
             fi
+            SALMON_TRANSCRIPTOME="$(dirname $TRANSCRIPTOME)"
+            SALMON_TRANSCRIPTOME="$(dirname $SALMON_TRANSCRIPTOME)"
+            SALMON_TRANSCRIPTOME+="/salmon"
             if [[ ! $TRANSCRIPTOME = NoTranscriptome && ! $TRANSCRIPTANNO = NoTranscriptome ]]; then
                 SALMON_ARGS="-keys salmon_transcriptome_val "
                 # full or relative path should be OK
@@ -305,7 +310,7 @@ while read line; do
             # for realignment at least this prunning has to be there, more can be included in the -x option
             [[ $EXTRAKEYVALS =~ prune ]] && PRUNE_NODES_ARGS="" || PRUNE_NODES_ARGS="-prune_nodes fop.*samtools_stats_F0.*00_bait.*-"
 
-            VTFP_CMD+="-keys samtools_executable -vals samtools1 "
+            VTFP_CMD+="-keys samtools_executable -vals samtools "
             VTFP_CMD+="-keys alignment_method -vals ${ALIGNMENTMETHOD} "
             VTFP_CMD+="-keys af_metrics -vals ${BAMID}.bam_alignment_filter_metrics.json "
             VTFP_CMD+="-keys reference_dict -vals ${REPOSDIR}/references/${REFDICTNAME} "
