@@ -46,7 +46,8 @@ morehelp(){
 	   -H               Show this message.
 	   -i <run_id>      A full valid run id (e.g. 17550_1#3, 16660_3, 17550_8#0_phix), if it doesn't exist in iRODS an error is thrown.
 	   -k <full path>   Full path to keytabs directory. Use env KEYTABPATH for default path otherwise one is required.
-	   -m <file>        Path to targets file with records grouped by library_id (default) or run_id and tag_index. The following columns are assumed to contain the id values: 2nd = run or library id, 3rd = tag index. Use -x to specify which case should be assumed.
+	   -m <file>        Path to targets file with records grouped by library_id (default) or run_id and tag_index.
+	                    The following columns are assumed to contain the id values: 2nd = run or library id, 3rd = tag index. Use -x to specify which case should be assumed.
 	   -n <number>      Record (line number) inside targets file to be processed.
 	   -o <out format>  Download output in this format.
 	                      -o b        BAM file, fail if doest't exist or can't be accessed.
@@ -65,6 +66,7 @@ morehelp(){
 	                    Use with -m to pass a reference genome to bammerge as an argument.
 	                      -R <number> Column in targets file that contains the path to the reference genome file.
 	                      -R <file>   Path to reference genome file.
+	   -s <study id>    Study id
 	   -t <file>        Path to targets file. The following columns are assumed to contain the id values: 2nd = run_id, 3rd = position, 4th = tag_index. Use -c to specify a different column.
 	   -u <auth mode>   IRODS user authentication method.
 	                      -u k        Kerberos credentials (provide path to keytab with -k if necessary).
@@ -78,6 +80,8 @@ morehelp(){
 	                    Use with -o = c|b|B to download along with BAM/CRAM.
 	                      -x a        All target tags if available (No PhiX/split files).
 	                      -x i        Index file: .cram.crai or .bai correspondingly.
+	                      -x s<float> (Experimental) Use option -s of samtools view to get a sample of the file e.g. -x s666.1.
+	                                  NOTE: Only basic syntax check: regex: 's[0-9]+\.[0-9]+' no more! See `samtools view' for details.
 	                    Use with -m to indicate how many columns to use as merging values (starting from column 2).
 	                      -x 1        CRAM files merged by library id (column 2 only) - this is the default.
 	                      -x 2        CRAM files merged by run_id and tag_index (columns 2 and 3 respectively).
@@ -171,7 +175,7 @@ while getopts ":0c:d:hHi:k:m:n:o:p:r:R:s:t:u:vx:" OPTION; do
             VERBOSE=1;;
         x)
             FMTXTRAOPT=$OPTARG
-            [[ ! $FMTXTRAOPT =~ ^[12abhi]$ ]] && exitmessage "[ERROR] -x: extra option is invalid: ${FMTXTRAOPT}. Try ${0} -H for help" 1;;
+            [[ ! $FMTXTRAOPT =~ ^[12abhi]|s[0-9]+\.[0-9]+$ ]] && exitmessage "[ERROR] -x: extra option is invalid: ${FMTXTRAOPT}. Try ${0} -H for help" 1;;
         \?)
             echo "Invalid option: -$OPTARG" >&2; exit 1;;
         :)
@@ -189,7 +193,7 @@ fi
 
 
 DRYRUN=${DRYRUN-0}
-VERBOSE=${VERBOSE-0}
+[ "$DRYRUN" -eq 1 ] && VERBOSE=1 || VERBOSE=${VERBOSE-0}
 DEFAULTDIR="."
 OUTPUTFORMAT=${OUTPUTFORMAT-c}
 XAM_FILE_EXT="cram"
@@ -202,7 +206,17 @@ if [ "$OUTPUTFORMAT" = "t" ]; then
     [[ ! $FMTXTRAOPT =~ ^[abh]$ ]] && exitmessage "[ERROR] -x: Wrong extra option for output format: -o ${OUTPUTFORMAT} -x ${FMTXTRAOPT}. Try ${0} -H for help" 1
 elif [[ $OUTPUTFORMAT =~ ^[cb]$ ]]; then
     if [ ! -z "$FMTXTRAOPT" ]; then
-        [[ ! $FMTXTRAOPT =~ ^[ai12]$ ]] && exitmessage "[ERROR] -x: Wrong extra option for output format: -o ${OUTPUTFORMAT} -x ${FMTXTRAOPT}. Try ${0} -H for help" 1
+        if [[ $FMTXTRAOPT =~ ^[ai12]$ ]]; then
+           [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] -x: Using extra option: ${FMTXTRAOPT}\n"
+        elif [[ $FMTXTRAOPT =~ ^s([0-9]+\.[0-9]+)$ ]]; then
+           SUBSAMPLE="-s ${BASH_REMATCH[1]}"
+           [ "$VERBOSE" -eq 1 ] && printf -- "[WARNING] -x: Output file will be a sub-sample of the original: ${SUBSAMPLE}\n"
+        fi
+    fi
+elif [[ $OUTPUTFORMAT =~ ^[f]$ ]]; then
+    if [[ $FMTXTRAOPT =~ ^s([0-9]+\.[0-9]+)$ ]]; then
+        SUBSAMPLE="-s ${BASH_REMATCH[1]}"
+        [ "$VERBOSE" -eq 1 ] && printf -- "[WARNING] -x: Output file will be a sub-sample of the original: ${SUBSAMPLE}\n"
     fi
 fi
 
@@ -253,6 +267,7 @@ else
     #[ "$VERBOSE" -eq 1 ] && echo "[INFO] If problems persist contact helpdesk for help logging in to iRODS"
 fi
 
+#set -x
 
 case "$INPUTMODE" in
 
@@ -386,9 +401,15 @@ case "$INPUTMODE" in
         RET_CODE=0
         case "$OUTPUTFORMAT" in
             b|c)
-                CMD="${IGET_BIN} -vf /seq/${RUN}/${XAMID}.${XAM_FILE_EXT} ${SDIR}/${XAMID}.${XAM_FILE_EXT}"
+                if [ -n "$SUBSAMPLE" ]; then
+                    CMD="${SAMTOOLS_BIN} view -h -o ${SDIR}/${XAMID}.${XAM_FILE_EXT} ${SUBSAMPLE} irods:/seq/${RUN}/${XAMID}.${XAM_FILE_EXT}"
+                    PROGLABEL="samtools"
+                else
+                    CMD="${IGET_BIN} -vf /seq/${RUN}/${XAMID}.${XAM_FILE_EXT} ${SDIR}/${XAMID}.${XAM_FILE_EXT}"
+                    PROGLABEL="iget"
+                fi
                 [ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" " $CMD"
-                [ $DRYRUN -eq 0 ] && IGETCMD="$($CMD 2>&1)" && RET_CODE=$? && INFO_MESSAGE="[INFO] [IGET] ${IGETCMD}\n"
+                [ $DRYRUN -eq 0 ] && IGETCMD="$($CMD 2>&1)" && RET_CODE=$? && INFO_MESSAGE="[INFO] [${PROGLABEL}] ${IGETCMD}\n"
                 if [ "$FMTXTRAOPT" = "i" ]; then
                     RET_CODE_IDX=0
                     CMD="${IGET_BIN} -KPvf /seq/${RUN}/${XAMID}.${XAM_IXFILE_EXT} ${SDIR}/${XAMID}.${XAM_IXFILE_EXT}"
@@ -402,7 +423,7 @@ case "$INPUTMODE" in
                 ;;
             B)
                 [ "$VERBOSE" -eq 1 ] && echo "[INFO] Converting cram->bam ..."
-                CMD="${SAMTOOLS_BIN} view -bh -o ${SDIR}/${XAMID}.bam irods:/seq/${RUN}/${XAMID}.cram"
+                CMD="${SAMTOOLS_BIN} view -bh -o ${SDIR}/${XAMID}.bam ${SUBSAMPLE} irods:/seq/${RUN}/${XAMID}.cram"
                 [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] $CMD"
                 [ $DRYRUN -eq 0 ] && CRAM2BAMCMD="$($CMD 2>&1)" && RET_CODE=$?
                 if [ "$FMTXTRAOPT" = "i" ]; then
@@ -427,9 +448,17 @@ case "$INPUTMODE" in
                 fi
                 FQ1="${SDIR}/${XAMID}_1.fq.gz"
                 FQ2="${SDIR}/${XAMID}_2.fq.gz"
-                CMD="${IGET_BIN} /seq/${RUN}/${XAMID}.${XAM_FILE_EXT} - | ${BAMSORT_BIN} SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./bamfq/tmp_${XAMID} | ${BAM2FQ_BIN} inputformat=bam exclude=QCFAIL T=./bamfq/tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2}"
+                if [ -n "$SUBSAMPLE" ]; then
+                    CMD="${SAMTOOLS_BIN} view -h --output-fmt=${XAM_FILE_EXT^^} ${SUBSAMPLE} irods:/seq/${RUN}/${XAMID}.${XAM_FILE_EXT} | ${BAMSORT_BIN} SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./tmp_${XAMID} | ${BAM2FQ_BIN} inputformat=bam exclude=QCFAIL T=./tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2}"
+                    #[ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" "${CMD}"
+                    #[ $DRYRUN -eq 0 ] && IGETCMD="$(${SAMTOOLS_BIN} view -h --output-fmt=${XAM_FILE_EXT^^} ${SUBSAMPLE} irods:/seq/${RUN}/${XAMID}.${XAM_FILE_EXT} - | ${BAMSORT_BIN} SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./tmp_${XAMID} | ${BAM2FQ_BIN} inputformat=bam exclude=QCFAIL T=./tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2} 2>&1)" && RET_CODE=$?
+                else
+                    CMD="${IGET_BIN} /seq/${RUN}/${XAMID}.${XAM_FILE_EXT} - | ${BAMSORT_BIN} SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./tmp_${XAMID} | ${BAM2FQ_BIN} inputformat=bam exclude=QCFAIL T=./tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2}"
+                    #[ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" "${CMD}"
+                    #[ $DRYRUN -eq 0 ] && IGETCMD="$(${IGET_BIN} /seq/${RUN}/${XAMID}.${XAM_FILE_EXT} - | bamsort SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./tmp_${XAMID} | bamtofastq inputformat=bam exclude=QCFAIL T=./tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2} 2>&1)" && RET_CODE=$?
+                fi
                 [ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" "${CMD}"
-                [ $DRYRUN -eq 0 ] && IGETCMD="$(iget /seq/${RUN}/${XAMID}.${XAM_FILE_EXT} - | bamsort SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./bamfq/tmp_${XAMID} | bamtofastq inputformat=bam exclude=QCFAIL T=./bamfq/tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2} 2>&1)" && RET_CODE=$?
+                [ $DRYRUN -eq 0 ] && IGETCMD="$(${CMD} 2>&1)" && RET_CODE=$?                
                 ;;
             i)
                 CMD="${IGET_BIN} -KPvf /seq/${RUN}/${XAMID}.${XAM_IXFILE_EXT} ${SDIR}/${XAMID}.${XAM_IXFILE_EXT}"
