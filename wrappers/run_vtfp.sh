@@ -211,7 +211,6 @@ while read line; do
             if [ "$METHOD" = "tophat2" ]; then
                 if [[ ! $TRANSCRIPTOME = NoTranscriptome ]]; then
                     TOPHAT2_ARGS="-keys transcriptome_val "
-                    # full or relative path should be OK
                     [[ ! $TRANSCRIPTOME = /* ]] && TOPHAT2_ARGS+="-vals ${REPOSDIR}/transcriptomes/${TRANSCRIPTOME} " || TOPHAT2_ARGS+="-vals ${TRANSCRIPTOME} "
                 elif  [[ ! $TRANSCRIPTANNO = NoTranscriptome ]]; then
                     TOPHAT2_ARGS+="-keys annotation_val " #only when there's no transcriptome index for tophat
@@ -238,7 +237,6 @@ while read line; do
             SALMON_TRANSCRIPTOME+="/salmon"
             if [[ ! $TRANSCRIPTOME = NoTranscriptome && ! $TRANSCRIPTANNO = NoTranscriptome ]]; then
                 SALMON_ARGS="-keys salmon_transcriptome_val "
-                # full or relative path should be OK
                 [[ ! $TRANSCRIPTOME = /* ]] && SALMON_ARGS+="-vals ${REPOSDIR}/transcriptomes/${SALMON_TRANSCRIPTOME} " || SALMON_ARGS+="-vals ${SALMON_TRANSCRIPTOME} "
             else
                 exitmessage "[ERROR] NoTranscriptome for Salmon quantification" 1
@@ -313,10 +311,14 @@ while read line; do
             VTFP_CMD+="-keys samtools_executable -vals samtools "
             VTFP_CMD+="-keys alignment_method -vals ${ALIGNMENTMETHOD} "
             VTFP_CMD+="-keys af_metrics -vals ${BAMID}.bam_alignment_filter_metrics.json "
-            VTFP_CMD+="-keys reference_dict -vals ${REPOSDIR}/references/${REFDICTNAME} "
-            VTFP_CMD+="-keys reference_genome_fasta -vals ${REPOSDIR}/references/${REFNAMEFASTA} "
-            VTFP_CMD+="-keys alignment_reference_genome -vals ${REPOSDIR}/references/${ALIGNREFGENOME} "
-            VTFP_CMD+="-keys phix_reference_genome_fasta -vals ${REPOSDIR}/references/${PHIXREFNAME} "
+            VTFP_CMD+="-keys reference_dict "
+            [[ ! $REFDICTNAME = /* ]] && VTFP_CMD+="-vals ${REPOSDIR}/references/${REFDICTNAME} " || VTFP_CMD+="-vals ${REFDICTNAME} "
+            VTFP_CMD+="-keys reference_genome_fasta "
+            [[ ! $REFNAMEFASTA = /* ]] && VTFP_CMD+="-vals ${REPOSDIR}/references/${REFNAMEFASTA} " || VTFP_CMD+="-vals ${REFNAMEFASTA} "
+            VTFP_CMD+="-keys alignment_reference_genome "
+            [[ ! $ALIGNREFGENOME = /* ]] && VTFP_CMD+="-vals ${REPOSDIR}/references/${ALIGNREFGENOME} " || VTFP_CMD+="-vals ${ALIGNREFGENOME} "
+            VTFP_CMD+="-keys phix_reference_genome_fasta "
+            [[ ! $PHIXREFNAME = /* ]] && VTFP_CMD+="-vals ${REPOSDIR}/references/${PHIXREFNAME} " || VTFP_CMD+="-vals ${PHIXREFNAME} "
             VTFP_CMD+="-keys alignment_filter_jar -vals ${ALIGNMENTFILTERJAR} "
             VTFP_CMD+="-keys aligner_numthreads -vals 16 "
             VTFP_CMD+="-keys br_numthreads_val -vals 7 "
