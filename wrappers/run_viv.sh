@@ -10,7 +10,7 @@
 usage(){
     cat <<-EOF
 	This script runs VIV using the information provided by a targets file.
-	[M]ethods available:  bwa_mem | bwa_aln | tophat2 | star | bam2cram | y_split | hs_split | salmon | bam2salmon
+	[M]ethods available: bam2salmon | bwa_mem | bwa_aln | hisat2| hs_split | salmon | star | tophat2 | y_split
 	If -m runfolder is used, paths for output and staging directories are taken from the json file and it's assumed they exist.
 	
 	Usage: 
@@ -52,7 +52,7 @@ while getopts ":c:hM:m:n:t:w:x:" OPTION; do
             usage; exit 1;;
         M)
             METHOD=$OPTARG
-            METHODREGEX="^bam2cram|tophat2|star|bwa\_aln|bwa\_mem|hs\_split|y\_split|bam2salmon|salmon$"
+            METHODREGEX="^tophat2|star|bwa\_aln|bwa\_mem|hs\_split|y\_split|bam2salmon|salmon|hisat2$"
             [ -z "$METHOD" ] && exitmessage "[ERROR] -M: a method is required: try '$0 -h' for more information" 1
             [ -n "$METHOD" ] && [[ ! $METHOD =~ $METHODREGEX ]] && exitmessage "[ERROR] -M: invalid method $METHOD: try '$0 -h' for more information" 1;;
         m)
