@@ -81,7 +81,7 @@ morehelp(){
 	                      -x a        All target tags if available (No PhiX/split files).
 	                      -x i        Index file: .cram.crai or .bai correspondingly.
 	                      -x s<float> (Experimental) Use option -s of samtools view to get a sample of the file e.g. -x s666.1.
-	                                  NOTE: Only basic syntax check: regex: 's[0-9]+\.[0-9]+' no more! See `samtools view' for details.
+	                                  NOTE: Only basic syntax check: regex: 's[0-9]+\.[0-9]+' no more! See 'samtools view' for details.
 	                    Use with -m to indicate how many columns to use as merging values (starting from column 2).
 	                      -x 1        CRAM files merged by library id (column 2 only) - this is the default.
 	                      -x 2        CRAM files merged by run_id and tag_index (columns 2 and 3 respectively).
@@ -450,12 +450,8 @@ case "$INPUTMODE" in
                 FQ2="${SDIR}/${XAMID}_2.fq.gz"
                 if [ -n "$SUBSAMPLE" ]; then
                     CMD="${SAMTOOLS_BIN} view -h --output-fmt=${XAM_FILE_EXT^^} ${SUBSAMPLE} irods:/seq/${RUN}/${XAMID}.${XAM_FILE_EXT} | ${BAMSORT_BIN} SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./tmp_${XAMID} | ${BAM2FQ_BIN} inputformat=bam exclude=QCFAIL T=./tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2}"
-                    #[ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" "${CMD}"
-                    #[ $DRYRUN -eq 0 ] && IGETCMD="$(${SAMTOOLS_BIN} view -h --output-fmt=${XAM_FILE_EXT^^} ${SUBSAMPLE} irods:/seq/${RUN}/${XAMID}.${XAM_FILE_EXT} - | ${BAMSORT_BIN} SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./tmp_${XAMID} | ${BAM2FQ_BIN} inputformat=bam exclude=QCFAIL T=./tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2} 2>&1)" && RET_CODE=$?
                 else
-                    CMD="${IGET_BIN} /seq/${RUN}/${XAMID}.${XAM_FILE_EXT} - | ${BAMSORT_BIN} SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./tmp_${XAMID} | ${BAM2FQ_BIN} inputformat=bam exclude=QCFAIL T=./tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2}"
-                    #[ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" "${CMD}"
-                    #[ $DRYRUN -eq 0 ] && IGETCMD="$(${IGET_BIN} /seq/${RUN}/${XAMID}.${XAM_FILE_EXT} - | bamsort SO=queryname level=0 inputformat=${XAM_FILE_EXT} ${REF_OPT} outputformat=bam index=0 tmpfile=./tmp_${XAMID} | bamtofastq inputformat=bam exclude=QCFAIL T=./tmp_b2fq_${XAMID} gz=1 level=9 F=${FQ1} F2=${FQ2} 2>&1)" && RET_CODE=$?
+                    CMD="${SAMTOOLS_BIN} fastq -c 9 -1 ${FQ1} -2 ${FQ2} -@ 8 irods:/seq/${RUN}/${XAMID}.${XAM_FILE_EXT}"
                 fi
                 [ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" "${CMD}"
                 [ $DRYRUN -eq 0 ] && IGETCMD="$(${CMD} 2>&1)" && RET_CODE=$?                
