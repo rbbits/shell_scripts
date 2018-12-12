@@ -4,15 +4,15 @@ usage(){
     cat <<-EOF
 	This script downloads bam|cram files from iRODS
 	Use $0 -H for more details about options.
-	
+
 	SYNOPSYS
-	
+
 	$0  -i  RUN_POSITION[#TAG[_SPLIT]]      [-0]            [-d VALUE] [-k VALUE]            [-o VALUE] [-R VALUE] [-u VALUE] [-v] [-x VALUE]
 	$0  -m  MERGED_TARGETS_FILE             [-0]            [-d VALUE] [-k VALUE] [-n VALUE]            [-R VALUE] [-u VALUE] [-v] [-x VALUE]
 	$0  -r  RUN[[_POSITION][#TAG][_SPLIT]]  [-0]            [-d VALUE] [-k VALUE]                                  [-u VALUE] [-v]
 	$0  -s  STUDYID                         [-0]            [-d VALUE] [-k VALUE]                                  [-u VALUE] [-v]
 	$0  -t  TARGETS_FILE                    [-0] [-c VALUE] [-d VALUE] [-k VALUE] [-n VALUE] [-o VALUE] [-R VALUE] [-u VALUE] [-v] [-x VALUE]
-	
+
 	EXAMPLES
 
 	$0 -t targets.txt        # a targets file containing specific id's and other info (e.g. save dir)
@@ -30,15 +30,15 @@ usage(){
 morehelp(){
     cat <<-EOF
 	usage: $0 options
-	
+
 	OPTIONS
-	
+
 	Required:
-	
+
 	   -i  RUN_POSITION[#TAG[_SPLIT]]  |  -m  MERGED_TARGETS_FILE  |  -r  RUN[[_POSITION][#TAG][_SPLIT]]  |  -s  STUDYID  |  -t  TARGETS_FILE
-	
+
 	Options:
-	
+
 	   -0               Dry-run: only print commands to be executed - verbose mode by default.
 	   -c <number  >    Use to indicate the column in the targets file to be used as source of ids.
 	   -d <savedir>     Download directory; default is ./<RUN>; If -t is used you can use -c <column n>.
@@ -52,7 +52,7 @@ morehelp(){
 	   -o <out format>  Download output in this format.
 	                      -o b        BAM file, fail if doest't exist or can't be accessed.
 	                      -o c        CRAM file. This is the default.
-	                      -o f        Files in FASTQ format (.fq.gz).	
+	                      -o f        Files in FASTQ format (.fq.gz).
 	                      -o i        Download index file only (.cram.crai or .bai) if both files are wanted then use -o c|b|B and -x i.
 	                      -o t        Tophat files only, extracting accepted_hits.bam from CRAM or BAM plus other files as specified by option -o.
 	                      -o B        BAM file, if only CRAM exist convert CRAM->BAM.
@@ -72,7 +72,7 @@ morehelp(){
 	                      -u k        Kerberos credentials (provide path to keytab with -k if necessary).
 	                      -u p        Password authentication (iinit), this is the default.
 	   -v               (More) verbose.
-	   -x <options>     Specify extra files to be downloaded or extra options to be used. 
+	   -x <options>     Specify extra files to be downloaded or extra options to be used.
 	                    Use with -o = t to download (in all cases files will be saved into ./tophat/<runid>/<rpt> and -d is ignored).
 	                      -x a        All available Tophat files: accepted_hits.bam, unmapped.bam, *.bed.
 	                      -x b        Tophat's BAMs: accepted_hits.bam and unmapped.bam.
@@ -85,9 +85,9 @@ morehelp(){
 	                    Use with -m to indicate how many columns to use as merging values (starting from column 2).
 	                      -x 1        CRAM files merged by library id (column 2 only) - this is the default.
 	                      -x 2        CRAM files merged by run_id and tag_index (columns 2 and 3 respectively).
-	
+
 	AUTHOR
-	
+
 	Ruben Bautista <rb11@sanger.ac.uk>.
 	EOF
 }
@@ -368,9 +368,9 @@ RET_CODE=1
 INFO_MESSAGE=""
 
 case "$INPUTMODE" in
-    
+
     i|t)
-        
+
         LSBAM="$(ils /seq/${RUN}/${XAMID}.bam 2>&1)"
         NOBAM=$?
         case $NOBAM in
@@ -454,7 +454,7 @@ case "$INPUTMODE" in
                     CMD="${SAMTOOLS_BIN} fastq -c 9 -1 ${FQ1} -2 ${FQ2} -@ 8 irods:/seq/${RUN}/${XAMID}.${XAM_FILE_EXT}"
                 fi
                 [ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" "${CMD}"
-                [ $DRYRUN -eq 0 ] && IGETCMD="$(${CMD} 2>&1)" && RET_CODE=$?                
+                [ $DRYRUN -eq 0 ] && IGETCMD="$(${CMD} 2>&1)" && RET_CODE=$?
                 ;;
             i)
                 CMD="${IGET_BIN} -KPvf /seq/${RUN}/${XAMID}.${XAM_IXFILE_EXT} ${SDIR}/${XAMID}.${XAM_IXFILE_EXT}"
@@ -513,7 +513,7 @@ case "$INPUTMODE" in
                 CMD="${BAMMERGE_BIN} level=1 inputformat=cram outputformat=cram tmpfile=staging/${RUN}_${TAG}_tmpfile ${BAMMERGE_INPUTS} ${REF_OPT} > ${SDIR}/${XAMID}.cram"
                 [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] ${CMD}"
                 [ "$DRYRUN" -eq 0 ] && IGETCMD=$(${BAMMERGE_BIN} level=1 inputformat=cram outputformat=cram tmpfile=staging/${RUN}_${TAG}_tmpfile ${BAMMERGE_INPUTS} ${REF_OPT} > ${SDIR}/${XAMID}.cram) && RET_CODE=$?
-                
+
             else
                 [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] 1 file found: nothing to merge\n"
                 CMD="${IGET_BIN} -KPvf ${META_INFO[@]} ${SDIR}/${XAMID}.cram"
@@ -523,8 +523,9 @@ case "$INPUTMODE" in
         else
             exitmessage "[ERROR] Error trying to query metadata: $META_INFO" 2
         fi
-        ;;     
-    r)    
+        ;;
+    r)
+        printf -- "[INFO] Querying iRODS ...\n"
         [ "$VERBOSE" -eq 1 ] && printf -- "[COMMAND] $META_QU_CMD\n"
         META_INFO="$($META_QU_CMD)"
         if [ "$?" -eq "0" ]; then
