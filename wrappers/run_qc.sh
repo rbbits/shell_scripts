@@ -3,20 +3,21 @@
 usage(){
     cat <<-EOF
 	This script runs a qc check using the 2nd, 3rd and 4th columns of a targets file for RUN, POSITION and TAG values correspondingly.
-	[M]ethods available:  bwa_mem | bwa_aln | tophat2 | star | bam2cram | y_split | hs_split | salmon
-	npg_qc uses the st::api::lims library to retrieve LIMS information (such as the reference genome); if different LIMS information 
+	npg_qc uses the st::api::lims library to retrieve LIMS information (such as the reference genome); if different LIMS information
 	is required, you may want to use a custome sample sheet and direct the library to it by setting the NPG_CACHED_SAMPLESHEET_FILE env var.
-		
-	Usage: 
 
-	$0 -M <METHOD> [options] targets_file.txt
-	
+	Usage:
+
+	$0 [options] targets_file.txt
+
 	Options:
+	   -0                  Dry-run: only print commands to be executed - verbose mode by default.
 	   -c <check>          QC check to run.
 	   -h                  Show usage message.
 	   -i <dir>            Input directory; default is ./input/<RUN>.
 	   -n <number>         Line number in targets to be processed
 	   -o <dir>            Output directory; default is ./output/<METHOD>/<RUN>/<ID_RUN>/qc/. The check may create its own.
+	   -v                  (More) verbose.
 	   -w <path>           Absolute path to working directory. Default: $PWD.
 	   -x <extra qc args>  Extra arguments passed to qc in a quoted string.
 	EOF
@@ -37,8 +38,10 @@ exitmessage(){
 
 #set -x
 
-while getopts ":c:hi:M:n:o:w:x:" OPTION; do
+while getopts ":0c:hi:n:o:vw:x:" OPTION; do
     case $OPTION in
+        0)
+            DRYRUN=1;;
         c)
             QC_CHECK=$OPTARG;;
         h)
@@ -48,19 +51,21 @@ while getopts ":c:hi:M:n:o:w:x:" OPTION; do
             if [[ $IDIR != . ]]; then
                 [ -d $IDIR ] || exitmessage "[ERROR] -o: Cannot access input directory ${SDIR}: No such directory" 2
             fi;;
-        M)
-            METHOD=$OPTARG
-            METHODREGEX="^bam2cram|tophat2|star|bwa\_aln|bwa\_mem|hs\_split|y\_split|salmon$"
-            [ -z "$METHOD" ] && exitmessage "[ERROR] -M: a method is required: try '$0 -h' for more information" 1
-            [ -n "$METHOD" ] && [[ ! $METHOD =~ $METHODREGEX ]] && exitmessage "[ERROR] -M: invalid method $METHOD: try '$0 -h' for more information" 1;;
         n)
             RECNO=$OPTARG
             [[ ! $RECNO =~ ^[0-9]+$ ]] && exitmessage "[ERROR] -n: not a digit: ${RECNO}" 1;;
         o)
             ODIR=$OPTARG
             if [[ $ODIR != . ]]; then
-                [ -d $ODIR ] || exitmessage "[ERROR] -o: Cannot access output directory ${SDIR}: No such directory" 2
+                if [ -h $ODIR ]; then
+                    LINKDIR="$(readlink $ODIR)"
+                    [ -d $LINKDIR ] || exitmessage "[ERROR] -o: Cannot access output directory ${LINKDIR}: No such directory" 2
+                else
+                    [ -d $ODIR ] || exitmessage "[ERROR] -o: Cannot access output directory ${ODIR}: No such directory" 2
+                fi
             fi;;
+        v)
+            VERBOSE=1;;
         w)
             CWD=$OPTARG
             [[ ! -d $CWD ]] && exitmessage "[ERROR] -w: Cannot access ${CWD}: no such directory" 2
@@ -75,7 +80,11 @@ while getopts ":c:hi:M:n:o:w:x:" OPTION; do
 done
 
 shift $((OPTIND-1))
+
 TARGETSFILE=$1
+DRYRUN=${DRYRUN-0}
+[ "$DRYRUN" -eq 1 ] && VERBOSE=1 || VERBOSE=${VERBOSE-0}
+[ "$DRYRUN" -eq "1" ] && printf "=========\n[DRY-RUN]\n=========\n" && VERBOSE=1
 
 if env | grep -q ^QC_PATH=; then
     # use whatever version of npg_qc defined by:
@@ -90,7 +99,7 @@ fi
 QC_EXEC=$BINARY
 
 WORKINGDIR=${CWD:-"$PWD"}
-printf -- "[INFO] Working directory: ${WORKINGDIR}\n"
+[ "$VERBOSE" -eq 1 ] && printf -- "[INFO] Working directory: ${WORKINGDIR}\n"
 
 # Read info from targets file
 if [ -n "$TARGETSFILE" ]; then
@@ -110,20 +119,20 @@ if [ -n "$TARGETSFILE" ]; then
     fi
 fi
 
-QC_OUT=${ODIR:-"${WORKINGDIR}/output/${METHOD}/${RUN}/${BAMID}/qc"}
-QC_IN=${IDIR:-"${WORKINGDIR}/output/${METHOD}/${RUN}/${BAMID}"}
+QC_OUT=${ODIR:-"${WORKINGDIR}/output/qc"}
+QC_IN=${IDIR:-"${WORKINGDIR}/input"}
 
-printf "[INFO] Output directory: %s\n" "${QC_OUT}"
-printf "[INFO] Input directory: %s\n" "${QC_IN}"
-[ ! -z "$EXTRAOPTS" ] && printf -- "[INFO] Using extra arguments [ ${EXTRAOPTS} ]\n"
+[ "$VERBOSE" -eq 1 ] && printf "[INFO] Output directory: %s\n" "${QC_OUT}"
+[ "$VERBOSE" -eq 1 ] && printf "[INFO] Input directory: %s\n" "${QC_IN}"
+[ "$VERBOSE" -eq 1 ] && [ ! -z "$EXTRAOPTS" ] && printf -- "[INFO] Using extra arguments [ ${EXTRAOPTS} ]\n"
 
 QC_CMD="${QC_EXEC} --check ${QC_CHECK} --id_run ${RUN} --position ${POS} ${TAG_INDEX_ARG} --qc_in ${QC_IN} --qc_out ${QC_OUT} ${EXTRAOPTS}"
 
-printf -- "[INFO] Running qc command:\n"
-printf -- "[COMMAND] ${QC_CMD}\n"
+[ "$VERBOSE" -eq 1 ] && printf -- "[INFO] Running qc command:\n"
+[ "$VERBOSE" -eq 1 ] && printf -- "[COMMAND] ${QC_CMD}\n"
 
-QC="$($QC_CMD 2>&1)"
-        
+[ $DRYRUN -eq 0 ] && QC="$($QC_CMD 2>&1)"
+
 RET_CODE=$?
 
 if [ "$RET_CODE" -eq "0" ]; then
