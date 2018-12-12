@@ -288,6 +288,12 @@ case "$INPUTMODE" in
                 [ -n "$TAG" ] && XAMID="${RUN}_${POS}#${TAG}"
                 [ -n "$SPL" ] && XAMID="${RUN}_${POS}#${TAG}_${SPL}"
             fi
+            ratio=`head -n ${LINE} ${TTARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $5}'`
+            if [ ! -z $ratio ]; then
+                SUBSAMPLE="-s ${ratio}"
+            else
+                SUBSAMPLE=""
+            fi
         fi
         RPT_REGEX='^([[:digit:]]+)_([[:digit:]]+)(_([[:alpha:]]+))?(#([[:digit:]]+))?(_([[:alpha:]]+))?$'
         if [[ "$XAMID" =~ $RPT_REGEX ]]; then
@@ -525,7 +531,6 @@ case "$INPUTMODE" in
         fi
         ;;
     r)
-        printf -- "[INFO] Querying iRODS ...\n"
         [ "$VERBOSE" -eq 1 ] && printf -- "[COMMAND] $META_QU_CMD\n"
         META_INFO="$($META_QU_CMD)"
         if [ "$?" -eq "0" ]; then
