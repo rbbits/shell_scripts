@@ -47,7 +47,7 @@ morehelp(){
 	   -i <run_id>      A full valid run id (e.g. 17550_1#3, 16660_3, 17550_8#0_phix), if it doesn't exist in iRODS an error is thrown.
 	   -k <full path>   Full path to keytabs directory. Use env KEYTABPATH for default path otherwise one is required.
 	   -m <file>        Path to targets file with records grouped by library_id (default) or run_id and tag_index.
-	                    The following columns are assumed to contain the id values: 2nd = run or library id, 3rd = tag index. Use -x to specify which case should be assumed.
+	                    The following columns are assumed to contain the id values: 1=study id, 2=run or library id, 3=tag index. Use -x to specify which case should be assumed.
 	   -n <number>      Record (line number) inside targets file to be processed.
 	   -o <out format>  Download output in this format.
 	                      -o b        BAM file, fail if doest't exist or can't be accessed.
@@ -83,8 +83,8 @@ morehelp(){
 	                      -x s<float> (Experimental) Use option -s of samtools view to get a sample of the file e.g. -x s666.1.
 	                                  NOTE: Only basic syntax check: regex: 's[0-9]+\.[0-9]+' no more! See 'samtools view' for details.
 	                    Use with -m to indicate how many columns to use as merging values (starting from column 2).
-	                      -x 1        CRAM files merged by library id (column 2 only) - this is the default.
-	                      -x 2        CRAM files merged by run_id and tag_index (columns 2 and 3 respectively).
+	                      -x 1        CRAM files merged by library id (uses column 2 only) - this is the default.
+	                      -x 2        CRAM files merged by run_id and tag_index (uses columns 2 and 3 respectively).
 
 	AUTHOR
 
@@ -309,6 +309,7 @@ case "$INPUTMODE" in
         [ -z "$LSB_JOBINDEX" -a -z "$RECNO" ] &&  exitmessage "[ERROR] -n: Env variable LSB_JOBINDEX not set and no record number was specified in its place" 1
         LINE=${LSB_JOBINDEX:-$RECNO}
         MERGEBYCOLUMNS=${FMTXTRAOPT-1}
+        STUDY=`head -n ${LINE} ${MTARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $1}'`
         if [ "$MERGEBYCOLUMNS" -eq 1 ]; then
             [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] Using column 2 - library_id as search and merging value\n"
             LIBRARY=`head -n ${LINE} ${MTARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $2}'`
@@ -319,7 +320,7 @@ case "$INPUTMODE" in
             RUN=`head -n ${LINE} ${MTARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $2}'`
             TAG=`head -n ${LINE} ${MTARGET} | tail -1 | awk 'BEGIN { FS = "\t" } ; {print $3}'`
             XAMID="${RUN}_${TAG}"
-            BATON_AVU_OPTS="-a id_run -v ${RUN} -a tag_index -v ${TAG}"
+            BATON_AVU_OPTS="-a id_run -v ${RUN} -a tag_index -v ${TAG} -a study_id -v ${STUDY}"
         else
             exitmessage "[ERROR] -x: Wrong extra option for input mode 'm': supported values are 1|2. Try ${0} -H for help" 1
         fi
