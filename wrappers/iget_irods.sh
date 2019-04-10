@@ -78,10 +78,14 @@ morehelp(){
 	                      -x b        Tophat's BAMs: accepted_hits.bam and unmapped.bam.
 	                      -x h        Tophat's accepted_hits.bam only (default).
 	                    Use with -o = c|b|B to download along with BAM/CRAM.
-	                      -x a        All target tags if available (No PhiX/split files).
+	                      -x a        All ancillary files (No PhiX/split files):
+	                                  *.{cram.crai,bai,flagstat,seqchksum,sha512primesums512.seqchksum}
+	                                  *_F0x{900,B00}.stats
+	                                  *_quality_{cycle_caltable,cycle_surv,error}.txt
 	                      -x i        Index file: .cram.crai or .bai correspondingly.
 	                      -x s<float> (Experimental) Use option -s of samtools view to get a sample of the file e.g. -x s666.1.
 	                                  NOTE: Only basic syntax check: regex: 's[0-9]+\.[0-9]+' no more! See 'samtools view' for details.
+	                      -x t        All target tags if available (No PhiX/split files).
 	                    Use with -m to indicate how many columns to use as merging values (starting from column 2).
 	                      -x 1        CRAM files merged by library id (uses column 2 only) - this is the default.
 	                      -x 2        CRAM files merged by run_id and tag_index (uses columns 2 and 3 respectively).
@@ -206,7 +210,7 @@ if [ "$OUTPUTFORMAT" = "t" ]; then
     [[ ! $FMTXTRAOPT =~ ^[abh]$ ]] && exitmessage "[ERROR] -x: Wrong extra option for output format: -o ${OUTPUTFORMAT} -x ${FMTXTRAOPT}. Try ${0} -H for help" 1
 elif [[ $OUTPUTFORMAT =~ ^[cb]$ ]]; then
     if [ ! -z "$FMTXTRAOPT" ]; then
-        if [[ $FMTXTRAOPT =~ ^[ai12]$ ]]; then
+        if [[ $FMTXTRAOPT =~ ^[ait12]$ ]]; then
            [ "$VERBOSE" -eq 1 ] && printf -- "[INFO] -x: Using extra option: ${FMTXTRAOPT}\n"
         elif [[ $FMTXTRAOPT =~ ^s([0-9]+\.[0-9]+)$ ]]; then
            SUBSAMPLE="-s ${BASH_REMATCH[1]}"
@@ -426,6 +430,28 @@ case "$INPUTMODE" in
                         printf -- "[INFO] Failed to download index file for [${SDIR}/${XAMID}.${XAM_FILE_EXT}]:\n"
                         printf -- "[ERROR] $IGETIXCMD\n"
                     fi
+                elif [ "$FMTXTRAOPT" = "a" ]; then
+                    [ "$VERBOSE" -eq 1 ] && echo "[COMMAND] mkdir -p ${SDIR}/${XAMID}"
+                    [ $DRYRUN -eq 0 ] && mkdir -p "${SDIR}/${XAMID}"
+                    for ANCFILE in ".${XAM_IXFILE_EXT}" \
+                                   ".flagstat" \
+                                   ".seqchksum" \
+                                   ".sha512primesums512.seqchksum" \
+                                   "_F0x900.stats" \
+                                   "_F0xB00.stats" \
+                                   "_quality_cycle_caltable.txt" \
+                                   "_quality_cycle_surv.txt" \
+                                   "_quality_error.txt"; do
+                        
+                        RET_CODE_ANC=0
+                        CMD="${IGET_BIN} -vf /seq/${RUN}/${XAMID}${ANCFILE} ${SDIR}/${XAMID}/${XAMID}${ANCFILE}"
+                        [ "$VERBOSE" -eq 1 ] && printf "[COMMAND] %s\n" "${CMD}"
+                        [ $DRYRUN -eq 0 ] && IGETANCCMD="$($CMD 2>&1)" && RET_CODE_ANC=$? && INFO_MESSAGE+="[INFO] [IGET] ${IGETANCCMD}\n"
+                        if [ "$RET_CODE_ANC" -ne "0" ]; then
+                            printf -- "[INFO] Failed to download ancilliary file for [${SDIR}/${XAMID}${ANCFILE}]:\n"
+                            printf -- "[ERROR] $IGETANCCMD\n"
+                        fi
+                    done
                 fi
                 ;;
             B)
